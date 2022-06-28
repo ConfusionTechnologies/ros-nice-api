@@ -38,6 +38,13 @@ class VideoRecvTrack(MediaStreamTrack):
 class RTCRecvConfig(JobCfg):
     topic: str = "topic"
     """Topic to publish to."""
+    spdX: float = 100.0
+    spdY: float = 100.0
+    iniX: int = 250
+    iniY: int = 250
+    height: int = 500
+    width: int = 500
+    size: int = 10
 
 
 @dataclass
@@ -50,15 +57,30 @@ class RTCReceiver(Job[RTCRecvConfig]):
         super(RTCReceiver, self).attach_params(node, cfg)
 
         node.declare_parameter("topic", cfg.topic)
+        node.declare_parameter("spdX", cfg.spdX)
+        node.declare_parameter("spdY", cfg.spdY)
+        node.declare_parameter("iniX", cfg.iniX)
+        node.declare_parameter("iniY", cfg.iniY)
+        node.declare_parameter("height", cfg.height)
+        node.declare_parameter("width", cfg.width)
+        node.declare_parameter("size", cfg.size)
+
+    def on_params_change(self, node, changes):
+        self.log.info(f"Config changed: {changes}.")
+        if any(
+            n in changes
+            for n in ("max_rate", "topic", "iniX", "iniY", "height", "width")
+        ):
+            self.log.info(f"Config change requires restart. Restarting...")
+            self.restart()
+        return True
 
     def attach_behaviour(self, node, cfg: RTCRecvConfig):
         super(RTCReceiver, self).attach_behaviour(node, cfg)
 
-        self._spd = (250, 10)  # (x,y) px per second
-        self._pos = (20, 0)  # in px
-        self._size = 10
+        self._pos = (cfg.iniX, cfg.iniY)
 
-        self._image = np.zeros((480, 640, 3), np.uint8)
+        self._image = np.zeros((cfg.height, cfg.width, 3), np.uint8)
 
         self._publisher = node.create_publisher(Image, cfg.topic, 30)
         try:
@@ -81,8 +103,8 @@ class RTCReceiver(Job[RTCRecvConfig]):
             delta = 0.0
         self._prev = now
         self._pos = (
-            (self._pos[0] + self._spd[0] * delta) % self._image.shape[1],
-            (self._pos[1] + self._spd[1] * delta) % self._image.shape[0],
+            (self._pos[0] + self.cfg.spdX * delta) % self.cfg.width,
+            (self._pos[1] + self.cfg.spdY * delta) % self.cfg.height,
         )
 
         # reset image canvas
@@ -90,20 +112,13 @@ class RTCReceiver(Job[RTCRecvConfig]):
         cv2.circle(
             self._image,
             (int(self._pos[0]), int(self._pos[1])),
-            self._size,
+            self.cfg.size,
             (0, 0, 255),
             -1,
         )
 
         msg = cv_bridge.cv2_to_imgmsg(self._image, encoding="bgr8")
         self._publisher.publish(msg)
-
-    def on_params_change(self, node, changes):
-        self.log.info(f"Config changed: {changes}.")
-        if any(n in changes for n in ("max_rate", "topic", "pub_size")):
-            self.log.info(f"Config change requires restart. Restarting...")
-            self.restart()
-        return True
 
 
 def main(args=None):
