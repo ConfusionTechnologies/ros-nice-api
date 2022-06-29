@@ -17,5 +17,10 @@ setup(
     description="Wrapper around aiortc for use with ROS",
     license="MIT",
     tests_require=["pytest"],
-    entry_points={"console_scripts": ["recv = aiortc_ros.recv:main"]},
+    entry_points={
+        "console_scripts": [
+            "recv = aiortc_ros.recv:main",
+            "redball = aiortc_ros.redball_demo:main",
+        ]
+    },
 )

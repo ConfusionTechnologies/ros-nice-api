@@ -1,3 +1,5 @@
+"""Below was smth @Interpause wrote for fun, can use to test rqt's image view"""
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 import sys
@@ -9,52 +11,43 @@ from cv_bridge import CvBridge
 import rclpy
 from rclpy.node import Node
 
-from aiortc import MediaStreamTrack
 from sensor_msgs.msg import Image
 
 from nicepynode import Job, JobCfg
 
-# Currently on version 1.3.2 of aiortc
-# See https://github.com/aiortc/aiortc/blob/1.3.2/src/aiortc/mediastreams.py
-# PeerConnection emits "track" event when browser sends track
-# track from client is of type MediaStreamTrack, most impt is recv() method
-# which returns either av.audio.frame.AudioFrame or av.video.frame.VideoFrame
-# depending on audio or video track
-
-NODE_NAME = "TEST"
+NODE_NAME = "RED_BALL_DEMO"
 
 cv_bridge = CvBridge()
 
 
-class VideoRecvTrack(MediaStreamTrack):
-
-    kind = "video"
-
-    def __init__(self, track, transf) -> None:
-        super().__init__()
-
-
 @dataclass
-class RTCRecvConfig(JobCfg):
+class RedBallCfg(JobCfg):
     topic: str = "topic"
     """Topic to publish to."""
     spdX: float = 100.0
+    """Horizontal speed of ball in pixels per second."""
     spdY: float = 100.0
+    """Vertical speed of ball in pixels per second."""
     iniX: int = 250
+    """Initial X coordinate in pixels."""
     iniY: int = 250
+    """Initial Y coordinate in pixels."""
     height: int = 500
+    """Height of canvas in pixels."""
     width: int = 500
+    """Height of canvas in pixels."""
     size: int = 10
+    """Size of ball in pixels."""
 
 
 @dataclass
-class RTCReceiver(Job[RTCRecvConfig]):
+class RedBallImgPublisher(Job[RedBallCfg]):
     """Receives WebRTC Video & publishes it as sensor_msgs/Image."""
 
-    ini_cfg: RTCRecvConfig = field(default_factory=RTCRecvConfig)
+    ini_cfg: RedBallCfg = field(default_factory=RedBallCfg)
 
-    def attach_params(self, node, cfg: RTCRecvConfig):
-        super(RTCReceiver, self).attach_params(node, cfg)
+    def attach_params(self, node, cfg: RedBallCfg):
+        super(RedBallImgPublisher, self).attach_params(node, cfg)
 
         node.declare_parameter("topic", cfg.topic)
         node.declare_parameter("spdX", cfg.spdX)
@@ -75,8 +68,8 @@ class RTCReceiver(Job[RTCRecvConfig]):
             self.restart()
         return True
 
-    def attach_behaviour(self, node, cfg: RTCRecvConfig):
-        super(RTCReceiver, self).attach_behaviour(node, cfg)
+    def attach_behaviour(self, node, cfg: RedBallCfg):
+        super(RedBallImgPublisher, self).attach_behaviour(node, cfg)
 
         self._pos = (cfg.iniX, cfg.iniY)
 
@@ -90,7 +83,7 @@ class RTCReceiver(Job[RTCRecvConfig]):
         self.log.info(f'Publishing to "{cfg.topic}" at {cfg.max_rate}Hz.')
 
     def detach_behaviour(self, node):
-        super(RTCReceiver, self).detach_behaviour(node)
+        super(RedBallImgPublisher, self).detach_behaviour(node)
 
         node.destroy_publisher(self._publisher)
         node.destroy_timer(self._timer)
@@ -129,8 +122,8 @@ def main(args=None):
 
     node = Node(NODE_NAME)
 
-    cfg = RTCRecvConfig(max_rate=120)
-    RTCReceiver(node, cfg)
+    cfg = RedBallCfg(max_rate=120)
+    RedBallImgPublisher(node, cfg)
 
     rclpy.spin(node)
     node.destroy_node()
