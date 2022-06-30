@@ -1,0 +1,8 @@
+aiortc_ros_msgs/SDP offer
+# TODO: implement
+# any type of token to identify client; JWT or Oauth?
+string token
+---
+aiortc_ros_msgs/SDP answer
+# unique id assigned by server to identify connection
+string conn_uuid
