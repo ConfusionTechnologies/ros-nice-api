@@ -1,22 +1,28 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
+import json
 import sys
 import asyncio
 from uuid import UUID, uuid4
+import traceback
 
-import cv2
-import numpy as np
 from cv_bridge import CvBridge
 import rclpy
 from rclpy.node import Node
 
-from aiortc import MediaStreamTrack, RTCSessionDescription, RTCPeerConnection
+from aiortc import (
+    RTCSessionDescription,
+    RTCPeerConnection,
+    RTCIceCandidate,
+    RTCDataChannel,
+)
 from sensor_msgs.msg import Image
 
 from nicepynode import Job, JobCfg
 from nicepynode.aioutils import to_thread, wait_coro
 from nicepynode.utils import Symbol
 from aiortc_ros_msgs.srv import Handshake
+from aiortc_ros_msgs.msg import IceCandidate, SDP
 
 # Currently on version 1.3.2 of aiortc
 # See https://github.com/aiortc/aiortc/blob/1.3.2/src/aiortc/mediastreams.py
@@ -33,12 +39,85 @@ WAITING = Symbol("WAITING")
 cv_bridge = CvBridge()
 
 
-class VideoRecvTrack(MediaStreamTrack):
+@dataclass
+class RTCManager:
+    loop: asyncio.AbstractEventLoop = None
 
-    kind = "video"
+    def __post_init__(self):
+        self._conns: dict[UUID, RTCPeerConnection] = {}
 
-    def __init__(self, track, transf) -> None:
-        super().__init__()
+    def _assert_loop(self):
+        """Ensure that asyncio loop for synchronous calls has been specified."""
+        assert (
+            not self.loop is None
+        ), f"{type(self).__name__} requires asyncio loop for sync methods!"
+
+    def _create_connection(self, conn_id) -> RTCPeerConnection:
+        """Create peer connection & attach event handlers and stuff."""
+        pc = RTCPeerConnection()  # TODO: configure IceServers
+
+        def on_datachannel(chn: RTCDataChannel):
+            chn.send(json.dumps(dict(code=501)))
+            chn.close()
+
+        pc.add_listener("datachannel", on_datachannel)
+
+        return pc
+
+    async def handshake(self, client_sdp: SDP) -> SDP:
+        """Handle RTC connection SDP handshake."""
+        conn_id = uuid4()
+        # intermediate WAITING state to prevent adding ice candidates before connection is ready
+        self._conns[conn_id] = WAITING
+
+        conn = self._create_connection(conn_id)
+        client_sdp = RTCSessionDescription(client_sdp.sdp, client_sdp.type)
+
+        await conn.setRemoteDescription(client_sdp)
+        await conn.setLocalDescription(await conn.createAnswer())
+
+        server_sdp = SDP()
+        server_sdp.sdp = conn.localDescription.sdp
+        server_sdp.type = conn.localDescription.type
+
+        self._conns[conn_id] = conn
+        return server_sdp
+
+    async def add_ice_candidate(self, candidate: IceCandidate):
+        """Handle trickled ICE candidates from client."""
+        conn_id = candidate.conn_uuid
+        # wait for connection to be ready for additional ice candidates
+        while self._conns.get(conn_id, None) == WAITING:
+            await asyncio.sleep(0)
+        conn = self._conns.get(conn_id, None)
+        # ensure connection exists, not some errant client sending invalid candidates
+        if conn:
+            await conn.addIceCandidate(
+                RTCIceCandidate(
+                    component=candidate.component,
+                    foundation=candidate.foundation,
+                    ip=candidate.ip,
+                    port=candidate.port,
+                    priority=candidate.priority,
+                    protocol=candidate.protocol,
+                    type=candidate.type,
+                    relatedAddress=candidate.related_address,
+                    relatedPort=candidate.related_port,
+                    sdpMid=candidate.sdp_mid,
+                    sdpMLineIndex=candidate.sdp_mline_index,
+                    tcpType=candidate.tcp_type,
+                )
+            )
+
+    def handshake_sync(self, client_sdp: SDP) -> SDP:
+        """Handle RTC connection SDP handshake synchronously."""
+        self._assert_loop()
+        return wait_coro(self.handshake(client_sdp), self.loop)
+
+    def add_ice_candidate_sync(self, candidate: IceCandidate):
+        """Handle adding trickled ICE candidate synchronously"""
+        self._assert_loop()
+        return wait_coro(self.add_ice_candidate(candidate), self.loop)
 
 
 @dataclass
@@ -58,6 +137,7 @@ class RTCReceiver(Job[RTCRecvConfig]):
     """Receives WebRTC Video & publishes it as sensor_msgs/Image."""
 
     ini_cfg: RTCRecvConfig = field(default_factory=RTCRecvConfig)
+    rtc_manager: RTCManager = None
 
     def attach_params(self, node, cfg: RTCRecvConfig):
         super(RTCReceiver, self).attach_params(node, cfg)
@@ -77,65 +157,53 @@ class RTCReceiver(Job[RTCRecvConfig]):
         super(RTCReceiver, self).attach_behaviour(node, cfg)
 
         self._conn_srv = node.create_service(
-            Handshake, cfg.connect_service, self._conn_cb
+            Handshake, cfg.connect_service, self._on_connection
+        )
+        self._ice_sub = node.create_subscription(
+            IceCandidate, cfg.ice_candidate_topic, self._on_ice_candidate
         )
 
     def detach_behaviour(self, node):
         super(RTCReceiver, self).detach_behaviour(node)
 
         node.destroy_service(self._conn_srv)
+        node.destroy_subscription(self._ice_sub)
 
-    def __post_init__(self):
-        super(RTCReceiver, self).__post_init__()
-
-        self._conns: dict[UUID, RTCPeerConnection] = {}
-        # asyncio event loop
-        self.loop: asyncio.AbstractEventLoop = None
-
-    def _assert_loop(self):
-        assert (
-            not self.loop is None
-        ), f"{type(self).__name__} must be run within an asyncio loop context!"
-
-    def _conn_cb(self, req: Handshake.Request, res: Handshake.Response):
-        self._assert_loop()
-        conn_id = uuid4()
-        self._conns[conn_id] = WAITING
-
-        conn = RTCPeerConnection()  # TODO: configure iceServers
-        client_sdp = RTCSessionDescription(req.offer.sdp, req.offer.type)
-
-        wait_coro(conn.setRemoteDescription(client_sdp))
-        server_sdp = wait_coro(conn.createAnswer())
-        wait_coro(conn.setLocalDescription(server_sdp))
-
-        res.answer.sdp = conn.localDescription.sdp
-        res.answer.type = conn.localDescription.type
-
-        self._conns[conn_id] = conn
-
+    def _on_connection(self, req: Handshake.Request, res: Handshake.Response):
+        """Handle connect_service exchange of SDP."""
+        try:
+            res.answer = self.rtc_manager.handshake_sync(req.offer)
+        except:
+            self.log.warning(traceback.format_exc())
         return res
 
-
-async def loop(job: RTCReceiver):
-    job.loop = asyncio.get_running_loop()
-    rostask = to_thread(rclpy.spin, job.node)
-    await rostask
+    def _on_ice_candidate(self, msg: IceCandidate):
+        """Handle trickled ice candidates."""
+        try:
+            self.rtc_manager.add_ice_candidate_sync(msg)
+        except:
+            self.log.warning(traceback.format_exc())
 
 
 def main(args=None):
     if __name__ == "__main__" and args is None:
         args = sys.argv
+    try:
+        rclpy.init(args=args)
 
-    rclpy.init(args=args)
+        node = Node(NODE_NAME)
+        cfg = RTCRecvConfig(max_rate=120)
 
-    node = Node(NODE_NAME)
+        async def loop():
+            manager = RTCManager(asyncio.get_running_loop())
+            RTCReceiver(node, cfg, manager)
+            rostask = to_thread(rclpy.spin, node)
+            await rostask
 
-    cfg = RTCRecvConfig(max_rate=120)
-
-    asyncio.run(loop(RTCReceiver(node, cfg)))
-    node.destroy_node()
-    rclpy.shutdown()
+        asyncio.run(loop())
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":
