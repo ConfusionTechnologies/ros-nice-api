@@ -50,7 +50,7 @@ class RTCReceiver(Job[RTCRecvConfig]):
 
     def on_params_change(self, node, changes):
         self.log.info(f"Config changed: {changes}.")
-        self.log.info(f"Config change requires restart. Restarting...")
+        self.log.info(f"Config change requires restart.")
         self.restart()
         return True
 
@@ -61,8 +61,11 @@ class RTCReceiver(Job[RTCRecvConfig]):
             Handshake, cfg.connect_service, self._on_connection
         )
         self._ice_sub = node.create_subscription(
-            IceCandidate, cfg.ice_candidate_topic, self._on_ice_candidate
+            IceCandidate, cfg.ice_candidate_topic, self._on_ice_candidate, 10
         )
+        self._frame_pub = node.create_publisher(Image, cfg.frames_out_topic, 30)
+
+        self.log.info("WebRTC Receiver Ready.")
 
     def detach_behaviour(self, node):
         super(RTCReceiver, self).detach_behaviour(node)
@@ -70,9 +73,35 @@ class RTCReceiver(Job[RTCRecvConfig]):
         node.destroy_service(self._conn_srv)
         node.destroy_subscription(self._ice_sub)
 
+    def step(self, delta):
+        frames = self.rtc_manager.get_frames()
+
+        for uuid, frame in frames.items():
+            img = Image()
+            img.height = frame.height
+            img.width = frame.width
+            # see https://github.com/ros2/common_interfaces/blob/foxy/sensor_msgs/include/sensor_msgs/image_encodings.hpp
+            img.encoding = "bgr8"
+            # adapted from https://github.com/PyAV-Org/PyAV/blob/main/av/video/frame.pyx
+            # specifically its to_image() func. prevents additional buffer copy.
+            plane = frame.reformat(format="bgr24").planes[0]
+            # plane supports Buffer Protocol & data.setter wraps using array.array
+            img.data = plane
+
+            img.is_bigendian = False
+            img.step = len(img.data) // img.height
+
+            # conn_id ~= camera_id ~= coordinate frame id
+            img.header.frame_id = str(uuid)
+            img.header.stamp.sec = int(frame.time)
+            img.header.stamp.nanosec = int((frame.time % 1) * 10 ** 9)
+
+            self._frame_pub.publish(img)
+
     def _on_connection(self, req: Handshake.Request, res: Handshake.Response):
         """Handle connect_service exchange of SDP."""
         try:
+            self.log.info(f"Incoming SDP: {req.offer}")
             res.answer = self.rtc_manager.handshake_sync(req.offer)
         except:
             self.log.warning(traceback.format_exc())
@@ -81,6 +110,7 @@ class RTCReceiver(Job[RTCRecvConfig]):
     def _on_ice_candidate(self, msg: IceCandidate):
         """Handle trickled ice candidates."""
         try:
+            self.log.info(f"Incoming candidate: {msg}")
             self.rtc_manager.add_ice_candidate_sync(msg)
         except:
             self.log.warning(traceback.format_exc())
@@ -93,7 +123,7 @@ def main(args=None):
         rclpy.init(args=args)
 
         node = Node(NODE_NAME)
-        cfg = RTCRecvConfig(max_rate=120)
+        cfg = RTCRecvConfig(rate=30)
 
         async def loop():
             manager = RTCManager(asyncio.get_running_loop())
