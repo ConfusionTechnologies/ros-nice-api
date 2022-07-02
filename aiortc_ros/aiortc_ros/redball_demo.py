@@ -61,12 +61,11 @@ class RedBallImgPublisher(Job[RedBallCfg]):
     def on_params_change(self, node, changes):
         self.log.info(f"Config changed: {changes}.")
         if any(
-            n in changes
-            for n in ("max_rate", "topic", "iniX", "iniY", "height", "width")
+            n in changes for n in ("rate", "topic", "iniX", "iniY", "height", "width")
         ):
-            self.log.info(f"Config change requires restart. Restarting...")
-            self.restart()
-        return True
+            self.log.info(f"Config change requires restart.")
+            return True
+        return False
 
     def attach_behaviour(self, node, cfg: RedBallCfg):
         super(RedBallImgPublisher, self).attach_behaviour(node, cfg)
@@ -76,25 +75,14 @@ class RedBallImgPublisher(Job[RedBallCfg]):
         self._image = np.zeros((cfg.height, cfg.width, 3), np.uint8)
 
         self._publisher = node.create_publisher(Image, cfg.topic, 30)
-        try:
-            self._timer = node.create_timer(1.0 / cfg.max_rate, self._timer_cb)
-        except ZeroDivisionError:
-            pass
-        self.log.info(f'Publishing to "{cfg.topic}" at {cfg.max_rate}Hz.')
+        self.log.info(f'Publishing to "{cfg.topic}" at {cfg.rate}Hz.')
 
     def detach_behaviour(self, node):
         super(RedBallImgPublisher, self).detach_behaviour(node)
 
         node.destroy_publisher(self._publisher)
-        node.destroy_timer(self._timer)
 
-    def _timer_cb(self):
-        now = time()
-        try:
-            delta = now - self._prev
-        except AttributeError:
-            delta = 0.0
-        self._prev = now
+    def step(self, delta):
         self._pos = (
             (self._pos[0] + self.cfg.spdX * delta) % self.cfg.width,
             (self._pos[1] + self.cfg.spdY * delta) % self.cfg.height,
@@ -122,7 +110,7 @@ def main(args=None):
 
     node = Node(NODE_NAME)
 
-    cfg = RedBallCfg(max_rate=120)
+    cfg = RedBallCfg(rate=120)
     RedBallImgPublisher(node, cfg)
 
     rclpy.spin(node)
