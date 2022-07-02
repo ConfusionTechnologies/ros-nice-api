@@ -21,6 +21,8 @@ find_package(rosidl_default_generators REQUIRED)
 
 set(msg_files
   "msg/SDP.msg"
+  "msg/IceServer.msg"
+  "msg/IceCandidate.msg"
 )
 
 set (srv_files
@@ -31,6 +33,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   ${msg_files}
   ${srv_files}
 )
+
+ament_export_dependencies(rosidl_default_runtime)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
