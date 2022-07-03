@@ -18,9 +18,7 @@ PACKAGE_NAME = "aiortc_ros"
 def generate_launch_description():
     namespace = LaunchConfiguration("namespace")
     namespace_arg = DeclareLaunchArgument(
-        "namespace",
-        description="Set the namespace of the nodes",
-        default_value=PACKAGE_NAME,
+        "namespace", description="Set the namespace of the nodes", default_value="rtc"
     )
 
     recv_node = Node(
@@ -45,10 +43,11 @@ def generate_launch_description():
             # the internal API for parsing this throws this through a YAML parser
             # then attempts topics_glob[1:-1].split(",")
             # see: https://github.com/RobotWebTools/rosbridge_suite/issues/727
-            # this is honestly retarded
-            topics_glob="\[*\]",
-            services_glob="\[*\]",
-            params_glob="\[*\]",
+            # apparently, the default (which is "") exposes everything due to a glitch...
+            # see: https://github.com/RobotWebTools/rosbridge_suite/issues/588#issuecomment-898050685
+            # topics_glob="\[*\]",
+            # services_glob="\[*\]",
+            # params_glob="\[*\]",
         ).items(),
     )
 

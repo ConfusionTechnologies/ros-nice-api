@@ -1,6 +1,7 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 import sys
+from array import array
 import asyncio
 import traceback
 
@@ -23,13 +24,13 @@ cv_bridge = CvBridge()
 
 @dataclass
 class RTCRecvConfig(JobCfg):
-    frames_out_topic: str = "~/{node}/frames_out"
+    frames_out_topic: str = "~/frames_out"
     """Topic to publish received video frames to."""
-    connect_service: str = "~/{node}/connect"
+    connect_service: str = "~/connect"
     """Service for exchanging WebRTC SDPs to establish connection."""
-    ice_candidate_topic: str = "~/{node}/ice_candidates"
+    ice_candidate_topic: str = "~/ice_candidates"
     """Topic to send trickled ICE candidates to."""
-    ice_info_service: str = "~/{node}/get_ice_servers"
+    ice_info_service: str = "~/get_ice_servers"
     """Get ICE servers available."""
 
 
@@ -75,6 +76,7 @@ class RTCReceiver(Job[RTCRecvConfig]):
 
     def step(self, delta):
         frames = self.rtc_manager.get_frames()
+        # self.log.info(str(frames))
 
         for uuid, frame in frames.items():
             img = Image()
@@ -85,14 +87,14 @@ class RTCReceiver(Job[RTCRecvConfig]):
             # adapted from https://github.com/PyAV-Org/PyAV/blob/main/av/video/frame.pyx
             # specifically its to_image() func. prevents additional buffer copy.
             plane = frame.reformat(format="bgr24").planes[0]
-            # plane supports Buffer Protocol & data.setter wraps using array.array
-            img.data = plane
+            # plane supports Buffer Protocol, this is more efficient than cv_bridge which uses numpy for it
+            img.data = array("B", memoryview(plane))
 
             img.is_bigendian = False
             img.step = len(img.data) // img.height
 
             # conn_id ~= camera_id ~= coordinate frame id
-            img.header.frame_id = str(uuid)
+            img.header.frame_id = uuid
             img.header.stamp.sec = int(frame.time)
             img.header.stamp.nanosec = int((frame.time % 1) * 10 ** 9)
 
@@ -101,8 +103,8 @@ class RTCReceiver(Job[RTCRecvConfig]):
     def _on_connection(self, req: Handshake.Request, res: Handshake.Response):
         """Handle connect_service exchange of SDP."""
         try:
-            self.log.info(f"Incoming SDP: {req.offer}")
-            res.answer = self.rtc_manager.handshake_sync(req.offer)
+            self.log.debug(f"Incoming SDP: {req.offer}")
+            res.answer, res.conn_uuid = self.rtc_manager.handshake_sync(req.offer)
         except:
             self.log.warning(traceback.format_exc())
         return res
@@ -110,7 +112,7 @@ class RTCReceiver(Job[RTCRecvConfig]):
     def _on_ice_candidate(self, msg: IceCandidate):
         """Handle trickled ice candidates."""
         try:
-            self.log.info(f"Incoming candidate: {msg}")
+            self.log.debug(f"Incoming candidate: {msg}")
             self.rtc_manager.add_ice_candidate_sync(msg)
         except:
             self.log.warning(traceback.format_exc())

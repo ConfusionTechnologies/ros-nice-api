@@ -2,7 +2,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import asyncio
-from uuid import UUID, uuid4
+import threading
+from uuid import uuid4
 
 from av import VideoFrame
 from aiortc import (
@@ -32,8 +33,9 @@ class RTCManager:
     loop: asyncio.AbstractEventLoop = None
 
     def __post_init__(self):
-        self._conns: dict[UUID, RTCPeerConnection] = {}
-        self._tracks: dict[UUID, RemoteStreamTrack] = {}
+        self._conns: dict[str, RTCPeerConnection] = {}
+        self._tracks: dict[str, RemoteStreamTrack] = {}
+        self._track_lock = threading.Lock()
 
     def _assert_loop(self):
         """Ensure that asyncio loop for synchronous calls has been specified."""
@@ -66,7 +68,8 @@ class RTCManager:
             chn.close()
 
         def on_track_end():
-            self._tracks.pop(conn_id, None)
+            with self._track_lock:
+                self._tracks.pop(conn_id, None)
 
         async def on_conn_state():
             if pc.connectionState == "failed":
@@ -76,18 +79,20 @@ class RTCManager:
 
         def on_track_received(track: RemoteStreamTrack):
             if track.kind == "video":
-                self._tracks[conn_id] = track
+                with self._track_lock:
+                    self._tracks[conn_id] = track
 
-            track.add_listener("ended", on_track_end)
+            # TODO: figure out the deadlock when trying to remove tracks
+            # track.add_listener("ended", on_track_end)
 
         pc.add_listener("datachannel", on_datachannel)
         pc.add_listener("connectionstatechange", on_conn_state)
         pc.add_listener("track", on_track_received)
         return pc
 
-    async def handshake(self, client_sdp: SDP) -> SDP:
+    async def handshake(self, client_sdp: SDP) -> tuple[SDP, str]:
         """Handle RTC connection SDP handshake."""
-        conn_id = uuid4()
+        conn_id = uuid4().hex
         # intermediate WAITING state to prevent adding ice candidates before connection is ready
         self._conns[conn_id] = WAITING
 
@@ -102,7 +107,7 @@ class RTCManager:
         server_sdp.type = conn.localDescription.type
 
         self._conns[conn_id] = conn
-        return server_sdp
+        return server_sdp, conn_id
 
     async def add_ice_candidate(self, candidate: IceCandidate) -> None:
         """Handle trickled ICE candidates from client."""
@@ -130,7 +135,7 @@ class RTCManager:
                 )
             )
 
-    def get_frames(self) -> dict[UUID, VideoFrame]:
+    def get_frames(self) -> dict[str, VideoFrame]:
         """
         Get current frames from all tracks. Frames are pyAV's VideoFrame.
         See https://pyav.org/docs/develop/api/video.html#av.video.frame.VideoFrame\
@@ -139,21 +144,22 @@ class RTCManager:
         # see https://github.com/aiortc/aiortc/blob/1.3.2/src/aiortc/rtcrtpreceiver.py
         # no choice but to use internal API track._queue
         frames = {}
-        for conn_id, track in self._tracks.items():
-            frame = None
-            # if there are frames, get the latest frame & discard the rest
-            # discarding might occur when sampling rate < track rate
-            while not track._queue.empty():
-                frame = track._queue.get_nowait()
-                # following what is in the internal API
-                if frame is None:
-                    track.stop()
+        with self._track_lock:
+            for conn_id, track in self._tracks.items():
+                frame = None
+                # if there are frames, get the latest frame & discard the rest
+                # discarding might occur when sampling rate < track rate
+                while not track._queue.empty():
+                    frame = track._queue.get_nowait()
+                    # following what is in the internal API
+                    if frame is None:
+                        track.stop()
 
-            if frame:  # self._tracks should contain only videos
-                frames[conn_id] = frame
+                if frame:  # self._tracks should contain only videos
+                    frames[conn_id] = frame
         return frames
 
-    def handshake_sync(self, client_sdp: SDP) -> SDP:
+    def handshake_sync(self, client_sdp: SDP) -> tuple[SDP, str]:
         """Handle RTC connection SDP handshake synchronously."""
         self._assert_loop()
         return wait_coro(self.handshake(client_sdp), self.loop)
