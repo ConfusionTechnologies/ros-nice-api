@@ -1,7 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 import sys
-from array import array
 import asyncio
 import traceback
 
@@ -83,12 +82,13 @@ class RTCReceiver(Job[RTCRecvConfig]):
             img.height = frame.height
             img.width = frame.width
             # see https://github.com/ros2/common_interfaces/blob/foxy/sensor_msgs/include/sensor_msgs/image_encodings.hpp
+            # see https://github.com/PyAV-Org/PyAV/blob/972f3ca096ef30c063744bdcd3c3380325408ec3/av/video/frame.pyx#L77
+            # pyAV's default format (yuv420p) not supported by ROS, so reformat is needed
             img.encoding = "bgr8"
-            # adapted from https://github.com/PyAV-Org/PyAV/blob/main/av/video/frame.pyx
-            # specifically its to_image() func. prevents additional buffer copy.
             plane = frame.reformat(format="bgr24").planes[0]
             # plane supports Buffer Protocol, this is more efficient than cv_bridge which uses numpy for it
-            img.data = array("B", memoryview(plane))
+            # See: https://github.com/ros-perception/vision_opencv/issues/443
+            img.data.frombytes(memoryview(plane))
 
             img.is_bigendian = False
             img.step = len(img.data) // img.height

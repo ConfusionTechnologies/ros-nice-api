@@ -19,3 +19,4 @@ It might be reimplemented in the future using <https://github.com/RobotWebTools/
   - It only supports `sensor_msgs/Image` not `sensor_msgs/CompressedImage`
     - Alternatively, use `image_transport` to transparently treat them all the same (but it doesn't have Python bindings...)
 - <https://docs.ros.org/en/foxy/Concepts/About-ROS-Interfaces.html#field-types> is useful for writing interfaces
+- <chrome://webrtc-internals/> **is your best friend!**
