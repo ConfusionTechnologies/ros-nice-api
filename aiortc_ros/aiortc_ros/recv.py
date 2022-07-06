@@ -4,7 +4,6 @@ import sys
 import asyncio
 import traceback
 
-from cv_bridge import CvBridge
 import rclpy
 from rclpy.node import Node
 
@@ -18,8 +17,6 @@ from aiortc_ros.rtc_manager import RTCManager
 
 NODE_NAME = "TEST"
 
-cv_bridge = CvBridge()
-
 
 @dataclass
 class RTCRecvConfig(JobCfg):
@@ -30,7 +27,7 @@ class RTCRecvConfig(JobCfg):
     ice_candidate_topic: str = "~/ice_candidates"
     """Topic to send trickled ICE candidates to."""
     ice_info_service: str = "~/get_ice_servers"
-    """Get ICE servers available."""
+    """Get ICE servers available. TODO: implement this."""
 
 
 @dataclass
