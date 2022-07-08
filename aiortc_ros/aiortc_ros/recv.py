@@ -15,7 +15,7 @@ from aiortc_ros_msgs.srv import Handshake
 from aiortc_ros_msgs.msg import IceCandidate
 from aiortc_ros.rtc_manager import RTCManager
 
-NODE_NAME = "TEST"
+NODE_NAME = "rtc_receiver"
 
 
 @dataclass
@@ -48,7 +48,6 @@ class RTCReceiver(Job[RTCRecvConfig]):
     def on_params_change(self, node, changes):
         self.log.info(f"Config changed: {changes}.")
         self.log.info(f"Config change requires restart.")
-        self.restart()
         return True
 
     def attach_behaviour(self, node, cfg: RTCRecvConfig):

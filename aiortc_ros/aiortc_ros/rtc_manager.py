@@ -82,8 +82,9 @@ class RTCManager:
                 with self._track_lock:
                     self._tracks[conn_id] = track
 
-            # TODO: figure out the deadlock when trying to remove tracks
-            # track.add_listener("ended", on_track_end)
+            # TODO: how to properly reject audio tracks?
+
+            track.add_listener("ended", on_track_end)
 
         pc.add_listener("datachannel", on_datachannel)
         pc.add_listener("connectionstatechange", on_conn_state)
@@ -144,6 +145,7 @@ class RTCManager:
         # see https://github.com/aiortc/aiortc/blob/1.3.2/src/aiortc/rtcrtpreceiver.py
         # no choice but to use internal API track._queue
         frames = {}
+        stopped: list[RemoteStreamTrack] = []
         with self._track_lock:
             for conn_id, track in self._tracks.items():
                 frame = None
@@ -151,12 +153,17 @@ class RTCManager:
                 # discarding might occur when sampling rate < track rate
                 while not track._queue.empty():
                     frame = track._queue.get_nowait()
-                    # following what is in the internal API
+                    # following aiortc's internal code for detecting track end
                     if frame is None:
-                        track.stop()
+                        stopped.append(track)
 
                 if frame:  # self._tracks should contain only videos
                     frames[conn_id] = frame
+
+        # tracks must be stopped outside of self._track_lock to avoid
+        # calling track removal handler, resulting in deadlock
+        for t in stopped:
+            t.stop()
         return frames
 
     def handshake_sync(self, client_sdp: SDP) -> tuple[SDP, str]:

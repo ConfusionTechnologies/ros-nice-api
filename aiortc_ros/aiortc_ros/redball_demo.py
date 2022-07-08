@@ -3,7 +3,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 import sys
-from time import time
 
 import cv2
 import numpy as np
@@ -15,7 +14,7 @@ from sensor_msgs.msg import Image
 
 from nicepynode import Job, JobCfg
 
-NODE_NAME = "RED_BALL_DEMO"
+NODE_NAME = "redball_demo"
 
 cv_bridge = CvBridge()
 
