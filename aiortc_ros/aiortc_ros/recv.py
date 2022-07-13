@@ -70,6 +70,9 @@ class RTCReceiver(Job[RTCRecvConfig]):
         node.destroy_subscription(self._ice_sub)
 
     def step(self, delta):
+        if self._frame_pub.get_subscription_count() < 1:
+            return
+
         frames = self.rtc_manager.get_frames()
         # self.log.info(str(frames))
 
