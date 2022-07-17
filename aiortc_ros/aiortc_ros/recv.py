@@ -1,13 +1,16 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 import sys
+from copy import copy
 import asyncio
 import traceback
 
+import cv2
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSPresetProfiles
 
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, CompressedImage
 
 from nicepynode import Job, JobCfg
 from nicepynode.aioutils import to_thread
@@ -16,6 +19,10 @@ from aiortc_ros_msgs.msg import IceCandidate
 from aiortc_ros.rtc_manager import RTCManager
 
 NODE_NAME = "rtc_receiver"
+
+# Realtime Profile: don't wait for slow subscribers
+rt_profile = copy(QoSPresetProfiles.SENSOR_DATA.value)
+rt_profile.depth = 10
 
 
 @dataclass
@@ -28,6 +35,9 @@ class RTCRecvConfig(JobCfg):
     """Topic to send trickled ICE candidates to."""
     ice_info_service: str = "~/get_ice_servers"
     """Get ICE servers available. TODO: implement this."""
+    rate: float = 144.0
+    use_compression: bool = False
+    """Only necessary for 4K. Before that, performance hit from compression > bandwidth hit."""
 
 
 @dataclass
@@ -59,7 +69,11 @@ class RTCReceiver(Job[RTCRecvConfig]):
         self._ice_sub = node.create_subscription(
             IceCandidate, cfg.ice_candidate_topic, self._on_ice_candidate, 10
         )
-        self._frame_pub = node.create_publisher(Image, cfg.frames_out_topic, 30)
+        self._frame_pub = node.create_publisher(
+            CompressedImage if cfg.use_compression else Image,
+            cfg.frames_out_topic,
+            rt_profile,
+        )
 
         self.log.info("WebRTC Receiver Ready.")
 
@@ -77,20 +91,31 @@ class RTCReceiver(Job[RTCRecvConfig]):
         # self.log.info(str(frames))
 
         for uuid, frame in frames.items():
-            img = Image()
-            img.height = frame.height
-            img.width = frame.width
-            # see https://github.com/ros2/common_interfaces/blob/foxy/sensor_msgs/include/sensor_msgs/image_encodings.hpp
-            # see https://github.com/PyAV-Org/PyAV/blob/972f3ca096ef30c063744bdcd3c3380325408ec3/av/video/frame.pyx#L77
-            # pyAV's default format (yuv420p) not supported by ROS, so reformat is needed
-            img.encoding = "bgr8"
-            plane = frame.reformat(format="bgr24").planes[0]
-            # plane supports Buffer Protocol, this is more efficient than cv_bridge which uses numpy for it
-            # See: https://github.com/ros-perception/vision_opencv/issues/443
-            img.data.frombytes(memoryview(plane))
+            if self.cfg.use_compression:
+                _, enc = cv2.imencode(
+                    ".jpg",
+                    frame.to_ndarray(format="bgr24"),
+                    [cv2.IMWRITE_JPEG_QUALITY, 100],
+                )
+                img = CompressedImage()
+                img.format = "jpeg"
+                img.data.frombytes(memoryview(enc))
 
-            img.is_bigendian = False
-            img.step = len(img.data) // img.height
+            else:
+                # see https://github.com/PyAV-Org/PyAV/blob/972f3ca096ef30c063744bdcd3c3380325408ec3/av/video/frame.pyx#L77
+                # pyAV's default format (yuv420p) not supported by ROS, so reformat is needed
+                plane = frame.reformat(format="bgr24").planes[0]
+                img = Image(
+                    height=frame.height,
+                    width=frame.width,
+                    # see https://github.com/ros2/common_interfaces/blob/foxy/sensor_msgs/include/sensor_msgs/image_encodings.hpp
+                    encoding="bgr8",
+                    is_bigendian=False,
+                )
+                # plane supports Python's Buffer Protocol, this is more efficient than cv_bridge which uses numpy for it
+                # See: https://github.com/ros-perception/vision_opencv/issues/443
+                img.data.frombytes(memoryview(plane))
+                img.step = len(img.data) // img.height
 
             # conn_id ~= camera_id ~= coordinate frame id
             img.header.frame_id = uuid
@@ -124,7 +149,7 @@ def main(args=None):
         rclpy.init(args=args)
 
         node = Node(NODE_NAME)
-        cfg = RTCRecvConfig(rate=30)
+        cfg = RTCRecvConfig()
 
         async def loop():
             manager = RTCManager(asyncio.get_running_loop())
