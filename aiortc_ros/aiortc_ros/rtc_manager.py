@@ -82,8 +82,6 @@ class RTCManager:
                 with self._track_lock:
                     self._tracks[conn_id] = track
 
-            # TODO: how to properly reject audio tracks?
-
             track.add_listener("ended", on_track_end)
 
         pc.add_listener("datachannel", on_datachannel)

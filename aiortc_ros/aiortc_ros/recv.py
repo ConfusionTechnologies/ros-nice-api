@@ -157,7 +157,11 @@ def main(args=None):
             rostask = to_thread(rclpy.spin, node)
             await rostask
 
+        # TODO: will sometimes freeze when trying to interrupt, my guess is some
+        # sort of deadlock in rtc_manager.py but i dont even know how to trace this.
         asyncio.run(loop())
+    except KeyboardInterrupt:
+        pass
     finally:
         node.destroy_node()
         rclpy.shutdown()
