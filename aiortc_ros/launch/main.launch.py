@@ -3,7 +3,7 @@ from pathlib import Path
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction
 from launch.substitutions import LaunchConfiguration
 from launch.launch_description_sources import FrontendLaunchDescriptionSource
 from launch_ros.actions import Node
@@ -26,6 +26,7 @@ def generate_launch_description():
         namespace=namespace,
         executable="recv",
         name="rtc_receiver",
+        respawn=True,
     )
 
     rosbridge_cfg = IncludeLaunchDescription(
@@ -37,7 +38,7 @@ def generate_launch_description():
             )
         ),
         launch_arguments=dict(
-            port="8000",
+            # port="8000",
             address="0.0.0.0",
             use_compression="true",
             # the internal API for parsing this throws this through a YAML parser
@@ -51,5 +52,9 @@ def generate_launch_description():
         ).items(),
     )
 
-    return LaunchDescription([namespace_arg, rosbridge_cfg, recv_node])
+    launch_desc = LaunchDescription(
+        [namespace_arg, recv_node, TimerAction(period=3.0, actions=[rosbridge_cfg])]
+    )
+
+    return launch_desc
 
