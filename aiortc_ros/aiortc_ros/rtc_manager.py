@@ -45,7 +45,30 @@ class RTCManager:
 
     def _create_connection(self, conn_id) -> RTCPeerConnection:
         """Create peer connection & attach event handlers and stuff."""
-        pc = RTCPeerConnection()  # TODO: configure IceServers
+        pc = RTCPeerConnection(
+            configuration=RTCConfiguration(
+                iceServers=[
+                    RTCIceServer(urls="stun:openrelay.metered.ca:80"),
+                    RTCIceServer(urls="stun:stun.l.google.com:19302"),
+                    RTCIceServer(urls="stun:global.stun.twilio.com:3478?transport=udp"),
+                    RTCIceServer(
+                        urls="turn:openrelay.metered.ca:80",
+                        username="openrelayproject",
+                        credential="openrelayproject",
+                    ),
+                    RTCIceServer(
+                        urls="turn:openrelay.metered.ca:443",
+                        username="openrelayproject",
+                        credential="openrelayproject",
+                    ),
+                    RTCIceServer(
+                        urls="turn:openrelay.metered.ca:443?transport=tcp",
+                        username="openrelayproject",
+                        credential="openrelayproject",
+                    ),
+                ]
+            )
+        )  # TODO: Dont hardcode this
 
         # PeerConnection events:
         # - track -> MediaStreamTrack
@@ -167,7 +190,7 @@ class RTCManager:
     def handshake_sync(self, client_sdp: SDP) -> tuple[SDP, str]:
         """Handle RTC connection SDP handshake synchronously."""
         self._assert_loop()
-        return wait_coro(self.handshake(client_sdp), self.loop)
+        return wait_coro(self.handshake(client_sdp), self.loop, timeout=20)
 
     def add_ice_candidate_sync(self, candidate: IceCandidate):
         """Handle adding trickled ICE candidate synchronously"""
