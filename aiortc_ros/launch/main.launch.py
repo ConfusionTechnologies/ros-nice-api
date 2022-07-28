@@ -39,7 +39,8 @@ def generate_launch_description():
         ),
         launch_arguments=dict(
             # port="8000",
-            address="0.0.0.0",
+            # address="0.0.0.0",
+            address="192.168.8.105",
             use_compression="true",
             # the internal API for parsing this throws this through a YAML parser
             # then attempts topics_glob[1:-1].split(",")
@@ -49,6 +50,9 @@ def generate_launch_description():
             # topics_glob="\[*\]",
             # services_glob="\[*\]",
             # params_glob="\[*\]",
+            ssl="true",
+            certfile="/code/server.crt",
+            keyfile="/code/server.key",
         ).items(),
     )
 
