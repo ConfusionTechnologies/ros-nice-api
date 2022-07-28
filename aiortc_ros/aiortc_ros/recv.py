@@ -36,8 +36,8 @@ class RTCRecvConfig(JobCfg):
     ice_info_service: str = "~/get_ice_servers"
     """Get ICE servers available. TODO: implement this."""
     rate: float = 144.0
-    use_compression: bool = False
-    """Only necessary for 4K. Before that, performance hit from compression > bandwidth hit."""
+    use_compression: bool = True
+    """Only necessary if sending high res (>480p) over rosbridge."""
 
 
 @dataclass
@@ -152,7 +152,7 @@ def main(args=None):
         cfg = RTCRecvConfig()
 
         async def loop():
-            manager = RTCManager(asyncio.get_running_loop())
+            manager = RTCManager(loop=asyncio.get_running_loop(), log=node.get_logger())
             RTCReceiver(node, cfg, manager)
             rostask = to_thread(rclpy.spin, node)
             await rostask

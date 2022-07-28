@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import json
 import asyncio
 import threading
+from typing import Any
 from uuid import uuid4
 
 from av import VideoFrame
@@ -10,6 +11,8 @@ from aiortc import (
     RTCSessionDescription,
     RTCPeerConnection,
     RTCIceCandidate,
+    RTCIceServer,
+    RTCConfiguration,
     RTCDataChannel,
 )
 from aiortc.rtcrtpreceiver import RemoteStreamTrack
@@ -31,6 +34,7 @@ WAITING = Symbol("WAITING")
 @dataclass
 class RTCManager:
     loop: asyncio.AbstractEventLoop = None
+    log: Any = None
 
     def __post_init__(self):
         self._conns: dict[str, RTCPeerConnection] = {}
@@ -93,17 +97,20 @@ class RTCManager:
         def on_track_end():
             with self._track_lock:
                 self._tracks.pop(conn_id, None)
+            self.log.info(f"[{conn_id}] Track removed")
 
         async def on_conn_state():
             if pc.connectionState == "failed":
                 self._conns.pop(conn_id, None)
                 on_track_end()
                 await pc.close()
+            self.log.info(f"[{conn_id}] State change: {pc.connectionState}")
 
         def on_track_received(track: RemoteStreamTrack):
             if track.kind == "video":
                 with self._track_lock:
                     self._tracks[conn_id] = track
+                self.log.info(f"[{conn_id}] Track added")
 
             track.add_listener("ended", on_track_end)
 
@@ -118,6 +125,7 @@ class RTCManager:
         # intermediate WAITING state to prevent adding ice candidates before connection is ready
         self._conns[conn_id] = WAITING
 
+        self.log.info(f"[{conn_id}] Beginning connection")
         conn = self._create_connection(conn_id)
         client_sdp = RTCSessionDescription(client_sdp.sdp, client_sdp.type)
 
@@ -129,6 +137,7 @@ class RTCManager:
         server_sdp.type = conn.localDescription.type
 
         self._conns[conn_id] = conn
+        self.log.info(f"[{conn_id}] Connection ready")
         return server_sdp, conn_id
 
     async def add_ice_candidate(self, candidate: IceCandidate) -> None:
@@ -140,6 +149,7 @@ class RTCManager:
         conn = self._conns.get(conn_id, None)
         # ensure connection exists, not some errant client sending invalid candidates
         if conn:
+            self.log.debug(f"[{conn_id}] Candidate added: {candidate}")
             await conn.addIceCandidate(
                 RTCIceCandidate(
                     component=candidate.component,
