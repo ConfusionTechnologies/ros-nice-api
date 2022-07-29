@@ -38,10 +38,9 @@ def generate_launch_description():
             )
         ),
         launch_arguments=dict(
-            # port="8000",
-            # address="0.0.0.0",
-            address="192.168.8.105",
-            use_compression="true",
+            port="9090",  # is default; but specify again to make sure
+            address="0.0.0.0",  # exposes on all network interfaces
+            use_compression="true",  # websocket compression
             # the internal API for parsing this throws this through a YAML parser
             # then attempts topics_glob[1:-1].split(",")
             # see: https://github.com/RobotWebTools/rosbridge_suite/issues/727
@@ -51,8 +50,8 @@ def generate_launch_description():
             # services_glob="\[*\]",
             # params_glob="\[*\]",
             ssl="true",
-            certfile="/code/server.crt",
-            keyfile="/code/server.key",
+            certfile="/cert/server.crt",
+            keyfile="/cert/server.key",
         ).items(),
     )
 
