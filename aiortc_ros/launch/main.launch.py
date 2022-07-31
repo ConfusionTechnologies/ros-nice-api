@@ -49,7 +49,7 @@ def generate_launch_description():
             # topics_glob="\[*\]",
             # services_glob="\[*\]",
             # params_glob="\[*\]",
-            ssl="true",
+            ssl="false",
             certfile="/cert/server.crt",
             keyfile="/cert/server.key",
         ).items(),
