@@ -19,6 +19,7 @@ from aiortc.rtcrtpreceiver import RemoteStreamTrack
 from nicepynode.aioutils import wait_coro
 from nicepynode.utils import Symbol
 from aiortc_ros_msgs.msg import IceCandidate, SDP
+from aiortc_ros.utils import have_internet
 
 # Currently on version 1.3.2 of aiortc
 # See https://github.com/aiortc/aiortc/blob/1.3.2/src/aiortc/mediastreams.py
@@ -41,6 +42,28 @@ class RTCManager:
         self._tracks: dict[str, RemoteStreamTrack] = {}
         self._track_lock = threading.Lock()
 
+        # TODO: dont hardcode
+        self._ice_servers = [
+            RTCIceServer(urls="stun:openrelay.metered.ca:80"),
+            RTCIceServer(urls="stun:stun.l.google.com:19302"),
+            RTCIceServer(urls="stun:global.stun.twilio.com:3478?transport=udp"),
+            RTCIceServer(
+                urls="turn:openrelay.metered.ca:80",
+                username="openrelayproject",
+                credential="openrelayproject",
+            ),
+            RTCIceServer(
+                urls="turn:openrelay.metered.ca:443",
+                username="openrelayproject",
+                credential="openrelayproject",
+            ),
+            RTCIceServer(
+                urls="turn:openrelay.metered.ca:443?transport=tcp",
+                username="openrelayproject",
+                credential="openrelayproject",
+            ),
+        ]
+
     def _assert_loop(self):
         """Ensure that asyncio loop for synchronous calls has been specified."""
         assert (
@@ -49,30 +72,19 @@ class RTCManager:
 
     def _create_connection(self, conn_id) -> RTCPeerConnection:
         """Create peer connection & attach event handlers and stuff."""
-        pc = RTCPeerConnection(
-            configuration=RTCConfiguration(
-                iceServers=[
-                    RTCIceServer(urls="stun:openrelay.metered.ca:80"),
-                    RTCIceServer(urls="stun:stun.l.google.com:19302"),
-                    RTCIceServer(urls="stun:global.stun.twilio.com:3478?transport=udp"),
-                    RTCIceServer(
-                        urls="turn:openrelay.metered.ca:80",
-                        username="openrelayproject",
-                        credential="openrelayproject",
-                    ),
-                    RTCIceServer(
-                        urls="turn:openrelay.metered.ca:443",
-                        username="openrelayproject",
-                        credential="openrelayproject",
-                    ),
-                    RTCIceServer(
-                        urls="turn:openrelay.metered.ca:443?transport=tcp",
-                        username="openrelayproject",
-                        credential="openrelayproject",
-                    ),
-                ]
+        # NOTE: aiortc gathers all ICE candidates upfront, connecting to all
+        # STUN/TURN servers to do so. Surprisingly, aiortc will fail if it cannot
+        # connect to even one server.
+        # Below internet connectivity check is not sufficient if STUN/TURN server
+        # itself is down.
+        # TODO: this is a bug, report it
+        ice_servers = self._ice_servers
+        if not have_internet():
+            self.log.warn(
+                "No internet! Removing STUN/TURN temporarily to attempt mDNS connection."
             )
-        )  # TODO: Dont hardcode this
+            ice_servers = []
+        pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=ice_servers))
 
         # PeerConnection events:
         # - track -> MediaStreamTrack
