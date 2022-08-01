@@ -11,6 +11,9 @@ from launch_ros.actions import Node
 # Feels like crappier version of click
 PACKAGE_NAME = "aiortc_ros"
 
+CERTFILE = "/cert/server.crt"
+KEYFILE = "/cert/server.key"
+
 
 # See documentation: https://github.com/ros2/launch/blob/foxy/launch/doc/source/architecture.rst
 
@@ -20,6 +23,15 @@ def generate_launch_description():
     namespace_arg = DeclareLaunchArgument(
         "namespace", description="Set the namespace of the nodes", default_value="rtc"
     )
+
+    ssl = "true"
+    try:
+        with open(CERTFILE, "r"):
+            pass
+        with open(KEYFILE, "r"):
+            pass
+    except:
+        ssl = "false"
 
     recv_node = Node(
         package=PACKAGE_NAME,
@@ -49,9 +61,9 @@ def generate_launch_description():
             # topics_glob="\[*\]",
             # services_glob="\[*\]",
             # params_glob="\[*\]",
-            ssl="false",
-            certfile="/cert/server.crt",
-            keyfile="/cert/server.key",
+            ssl=ssl,
+            certfile=CERTFILE,
+            keyfile=KEYFILE,
         ).items(),
     )
 
