@@ -14,6 +14,7 @@ from sensor_msgs.msg import Image, CompressedImage
 
 from nicepynode import Job, JobCfg
 from nicepynode.aioutils import to_thread
+from nicepynode.utils import declare_parameters_from_dataclass
 from aiortc_ros_msgs.srv import Handshake
 from aiortc_ros_msgs.msg import IceCandidate
 from aiortc_ros.rtc_manager import RTCManager
@@ -50,10 +51,8 @@ class RTCReceiver(Job[RTCRecvConfig]):
     def attach_params(self, node, cfg: RTCRecvConfig):
         super(RTCReceiver, self).attach_params(node, cfg)
 
-        node.declare_parameter("frames_out_topic", cfg.frames_out_topic)
-        node.declare_parameter("connect_service", cfg.connect_service)
-        node.declare_parameter("ice_candidate_topic", cfg.ice_candidate_topic)
-        node.declare_parameter("ice_info_service", cfg.ice_info_service)
+        # compression should not be changed at runtime lest all the other nodes crash
+        declare_parameters_from_dataclass(node, cfg, exclude_keys=["use_compression"])
 
     def on_params_change(self, node, changes):
         self.log.info(f"Config changed: {changes}.")

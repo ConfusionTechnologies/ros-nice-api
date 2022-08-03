@@ -13,6 +13,7 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image
 
 from nicepynode import Job, JobCfg
+from nicepynode.utils import declare_parameters_from_dataclass
 
 NODE_NAME = "redball_demo"
 
@@ -48,14 +49,7 @@ class RedBallImgPublisher(Job[RedBallCfg]):
     def attach_params(self, node, cfg: RedBallCfg):
         super(RedBallImgPublisher, self).attach_params(node, cfg)
 
-        node.declare_parameter("topic", cfg.topic)
-        node.declare_parameter("spdX", cfg.spdX)
-        node.declare_parameter("spdY", cfg.spdY)
-        node.declare_parameter("iniX", cfg.iniX)
-        node.declare_parameter("iniY", cfg.iniY)
-        node.declare_parameter("height", cfg.height)
-        node.declare_parameter("width", cfg.width)
-        node.declare_parameter("size", cfg.size)
+        declare_parameters_from_dataclass(node, cfg)
 
     def on_params_change(self, node, changes):
         self.log.info(f"Config changed: {changes}.")
