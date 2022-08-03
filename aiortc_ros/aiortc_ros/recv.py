@@ -1,31 +1,36 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
-import sys
-from copy import copy
+
 import asyncio
+import sys
 import traceback
+from copy import copy
+from dataclasses import dataclass, field
 
 import cv2
 import rclpy
-from rclpy.node import Node
-
-from sensor_msgs.msg import Image, CompressedImage
-
+from aiortc_ros_msgs.msg import IceCandidate
+from aiortc_ros_msgs.srv import Handshake
 from nicepynode import Job, JobCfg
 from nicepynode.aioutils import to_thread
-from nicepynode.utils import RT_PUB_PROFILE, declare_parameters_from_dataclass
-from aiortc_ros_msgs.srv import Handshake
-from aiortc_ros_msgs.msg import IceCandidate
+from nicepynode.utils import (
+    RT_PUB_PROFILE,
+    declare_parameters_from_dataclass,
+    letterbox,
+)
+from rclpy.node import Node
+from sensor_msgs.msg import CompressedImage, Image
+
 from aiortc_ros.rtc_manager import RTCManager
 
 NODE_NAME = "rtc_receiver"
 
 RT_PUB_PROFILE = copy(RT_PUB_PROFILE)
-RT_PUB_PROFILE.depth = 3
+RT_PUB_PROFILE.depth = 2
 
 
 @dataclass
 class RTCRecvConfig(JobCfg):
+    rate: float = 120.0
     frames_out_topic: str = "~/frames_out"
     """Topic to publish received video frames to."""
     connect_service: str = "~/connect"
@@ -34,9 +39,12 @@ class RTCRecvConfig(JobCfg):
     """Topic to send trickled ICE candidates to."""
     ice_info_service: str = "~/get_ice_servers"
     """Get ICE servers available. TODO: implement this."""
-    rate: float = 144.0
     use_compression: bool = True
-    """Only necessary if sending high res (>480p) over rosbridge."""
+    """Only necessary if sending high res (>720p) over rosbridge."""
+    compression_level: int = 75
+    """Compression level for image frames. Compression only necessary if sending high res over rosbridge."""
+    downscale_wh: int = 0
+    """When using compression, downscaling the image may be necessary due to CPU usage from image decompression."""
 
 
 @dataclass
@@ -49,13 +57,14 @@ class RTCReceiver(Job[RTCRecvConfig]):
     def attach_params(self, node, cfg: RTCRecvConfig):
         super(RTCReceiver, self).attach_params(node, cfg)
 
-        # compression should not be changed at runtime lest all the other nodes crash
-        declare_parameters_from_dataclass(node, cfg, exclude_keys=["use_compression"])
+        declare_parameters_from_dataclass(node, cfg)
 
     def on_params_change(self, node, changes):
         self.log.info(f"Config changed: {changes}.")
-        self.log.info(f"Config change requires restart.")
-        return True
+        if not all(n in ("compression_level",) for n in changes):
+            self.log.info(f"Config change requires restart.")
+            return True
+        return False
 
     def attach_behaviour(self, node, cfg: RTCRecvConfig):
         super(RTCReceiver, self).attach_behaviour(node, cfg)
@@ -90,15 +99,33 @@ class RTCReceiver(Job[RTCRecvConfig]):
 
         for uuid, frame in frames.items():
             if self.cfg.use_compression:
+                cv2img = frame.to_ndarray(format="bgr24")
+                if self.cfg.downscale_wh > 0:
+                    cv2img = letterbox(
+                        cv2img, (self.cfg.downscale_wh, self.cfg.downscale_wh)
+                    )[0]
                 _, enc = cv2.imencode(
                     ".jpg",
-                    frame.to_ndarray(format="bgr24"),
-                    [cv2.IMWRITE_JPEG_QUALITY, 100],
+                    cv2img,
+                    (cv2.IMWRITE_JPEG_QUALITY, self.cfg.compression_level),
                 )
                 img = CompressedImage()
                 img.format = "jpeg"
                 img.data.frombytes(memoryview(enc))
 
+            elif self.cfg.downscale_wh > 0:
+                cv2img = frame.to_ndarray(format="bgr24")
+                cv2img = letterbox(
+                    cv2img, (self.cfg.downscale_wh, self.cfg.downscale_wh)
+                )
+                img = Image(
+                    height=img.shape[0],
+                    width=img.shape[1],
+                    encoding="bgr8",
+                    is_bigendian=False,
+                )
+                img.data.frombytes(memoryview(cv2img))
+                img.step = len(img.data) // img.height
             else:
                 # see https://github.com/PyAV-Org/PyAV/blob/972f3ca096ef30c063744bdcd3c3380325408ec3/av/video/frame.pyx#L77
                 # pyAV's default format (yuv420p) not supported by ROS, so reformat is needed

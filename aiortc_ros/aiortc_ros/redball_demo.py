@@ -1,19 +1,18 @@
 """Below was smth @Interpause wrote for fun, can use to test rqt's image view"""
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+
 import sys
+from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
-from cv_bridge import CvBridge
 import rclpy
-from rclpy.node import Node
-
-from sensor_msgs.msg import Image
-
+from cv_bridge import CvBridge
 from nicepynode import Job, JobCfg
-from nicepynode.utils import declare_parameters_from_dataclass
+from nicepynode.utils import RT_PUB_PROFILE, declare_parameters_from_dataclass
+from rclpy.node import Node
+from sensor_msgs.msg import Image
 
 NODE_NAME = "redball_demo"
 
@@ -67,7 +66,7 @@ class RedBallImgPublisher(Job[RedBallCfg]):
 
         self._image = np.zeros((cfg.height, cfg.width, 3), np.uint8)
 
-        self._publisher = node.create_publisher(Image, cfg.topic, 30)
+        self._publisher = node.create_publisher(Image, cfg.topic, RT_PUB_PROFILE)
         self.log.info(f'Publishing to "{cfg.topic}" at {cfg.rate}Hz.')
 
     def detach_behaviour(self, node):
