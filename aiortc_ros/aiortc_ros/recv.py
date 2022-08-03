@@ -8,22 +8,20 @@ import traceback
 import cv2
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSPresetProfiles
 
 from sensor_msgs.msg import Image, CompressedImage
 
 from nicepynode import Job, JobCfg
 from nicepynode.aioutils import to_thread
-from nicepynode.utils import declare_parameters_from_dataclass
+from nicepynode.utils import RT_PUB_PROFILE, declare_parameters_from_dataclass
 from aiortc_ros_msgs.srv import Handshake
 from aiortc_ros_msgs.msg import IceCandidate
 from aiortc_ros.rtc_manager import RTCManager
 
 NODE_NAME = "rtc_receiver"
 
-# Realtime Profile: don't wait for slow subscribers
-rt_profile = copy(QoSPresetProfiles.SENSOR_DATA.value)
-rt_profile.depth = 10
+RT_PUB_PROFILE = copy(RT_PUB_PROFILE)
+RT_PUB_PROFILE.depth = 3
 
 
 @dataclass
@@ -71,7 +69,7 @@ class RTCReceiver(Job[RTCRecvConfig]):
         self._frame_pub = node.create_publisher(
             CompressedImage if cfg.use_compression else Image,
             cfg.frames_out_topic,
-            rt_profile,
+            RT_PUB_PROFILE,
         )
 
         self.log.info("WebRTC Receiver Ready.")
@@ -81,6 +79,7 @@ class RTCReceiver(Job[RTCRecvConfig]):
 
         node.destroy_service(self._conn_srv)
         node.destroy_subscription(self._ice_sub)
+        node.destroy_publisher(self._frame_pub)
 
     def step(self, delta):
         if self._frame_pub.get_subscription_count() < 1:
