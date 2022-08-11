@@ -46,24 +46,25 @@ class RTCManager:
 
         # TODO: dont hardcode
         self._ice_servers = [
-            RTCIceServer(urls="stun:openrelay.metered.ca:80"),
-            RTCIceServer(urls="stun:stun.l.google.com:19302"),
-            RTCIceServer(urls="stun:global.stun.twilio.com:3478?transport=udp"),
-            RTCIceServer(
-                urls="turn:openrelay.metered.ca:80",
-                username="openrelayproject",
-                credential="openrelayproject",
-            ),
-            RTCIceServer(
-                urls="turn:openrelay.metered.ca:443",
-                username="openrelayproject",
-                credential="openrelayproject",
-            ),
-            RTCIceServer(
-                urls="turn:openrelay.metered.ca:443?transport=tcp",
-                username="openrelayproject",
-                credential="openrelayproject",
-            ),
+            RTCIceServer(urls="stun:localhost:3478"),
+            # RTCIceServer(urls="stun:openrelay.metered.ca:80"),
+            # RTCIceServer(urls="stun:stun.l.google.com:19302"),
+            # RTCIceServer(urls="stun:global.stun.twilio.com:3478?transport=udp"),
+            # RTCIceServer(
+            #     urls="turn:openrelay.metered.ca:80",
+            #     username="openrelayproject",
+            #     credential="openrelayproject",
+            # ),
+            # RTCIceServer(
+            #     urls="turn:openrelay.metered.ca:443",
+            #     username="openrelayproject",
+            #     credential="openrelayproject",
+            # ),
+            # RTCIceServer(
+            #     urls="turn:openrelay.metered.ca:443?transport=tcp",
+            #     username="openrelayproject",
+            #     credential="openrelayproject",
+            # ),
         ]
 
     def _assert_loop(self):
@@ -85,7 +86,7 @@ class RTCManager:
             self.log.warn(
                 "No internet! Removing STUN/TURN temporarily to attempt mDNS connection."
             )
-            ice_servers = []
+            ice_servers = [RTCIceServer(urls="stun:localhost:3478")]
         pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=ice_servers))
 
         # PeerConnection events:
