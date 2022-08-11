@@ -45,6 +45,8 @@ class RTCRecvConfig(JobCfg):
     """Compression level for image frames. Compression only necessary if sending high res over rosbridge."""
     downscale_wh: int = 0
     """When using compression, downscaling the image may be necessary due to CPU usage from image decompression."""
+    debug_window: bool = False
+    """Displays the video feed for debug purpposes."""
 
 
 @dataclass
@@ -59,9 +61,12 @@ class RTCReceiver(Job[RTCRecvConfig]):
 
         declare_parameters_from_dataclass(node, cfg)
 
+        self._winname = "[Livefeed] aiortc_ros"
+        self._winshown = False
+
     def on_params_change(self, node, changes):
         self.log.info(f"Config changed: {changes}.")
-        if not all(n in ("compression_level",) for n in changes):
+        if not all(n in ("compression_level", "debug_window") for n in changes):
             self.log.info(f"Config change requires restart.")
             return True
         return False
@@ -98,6 +103,16 @@ class RTCReceiver(Job[RTCRecvConfig]):
         # self.log.info(str(frames))
 
         for uuid, frame in frames.items():
+            if self.cfg.debug_window:
+                cv2img = frame.to_ndarray(format="bgr24")
+                cv2.namedWindow(self._winname, cv2.WINDOW_NORMAL)
+                self._winshown = True
+                cv2.imshow(self._winname, cv2img)
+                cv2.waitKey(1)
+            elif self._winshown:
+                cv2.destroyWindow(self._winname)
+                self._winshown = False
+
             if self.cfg.use_compression:
                 cv2img = frame.to_ndarray(format="bgr24")
                 if self.cfg.downscale_wh > 0:
