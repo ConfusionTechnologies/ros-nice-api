@@ -100,7 +100,8 @@ class RTCSender(RTCNode[RTCSendConfig]):
         # TODO: _remove_stale caused me A LOT of debugging trouble
         # Account for duration spent in _on_connection to avoid
         # inadvertently deleting & creating a fresh LiveStreamTrack
-        # self._remove_stale()
+        # NOTE: increasing the expiry_duration > 10s is a workaround
+        self._remove_stale()
         pass
 
     def _remove_stale(self):
@@ -110,7 +111,7 @@ class RTCSender(RTCNode[RTCSendConfig]):
             to_remove = [
                 k
                 for k in self._tracks
-                if now.sec - self._last_seen.get(k, -999) >= self.cfg.expiry_duration
+                if now.sec - self._last_seen.get(k, now.sec) >= self.cfg.expiry_duration
             ]
 
             for frame_id in to_remove:
@@ -120,6 +121,8 @@ class RTCSender(RTCNode[RTCSendConfig]):
     def _get_track(self, frame_id):
         with self._track_lock:
             track = self._tracks.get(frame_id, None)
+            # not really the best place to put this
+            self._last_seen[frame_id] = self.get_timestamp().sec
             if not track is None:
                 return track
             else:
@@ -128,10 +131,8 @@ class RTCSender(RTCNode[RTCSendConfig]):
 
     def _on_input(self, msg: Image):
         # update list of frame_id available before returning if no connections to send to
-
         frame_id = msg.header.frame_id
         track = self._get_track(frame_id)
-        # self._last_seen[frame_id] = self.get_timestamp().sec
 
         if len(self.rtc_manager._conns) < 1:
             return
@@ -145,26 +146,13 @@ class RTCSender(RTCNode[RTCSendConfig]):
             return
         track.send_frame(img)
 
-        try:
-            if self._print_once:
-                pass
-        except:
-            self.log.error(f"on input dict id {id(self._tracks)}")
-            test = {k: id(v) for k, v in self._tracks.items()}
-            self.log.info(f"{test}")
-            self._print_once = True
-
     def _on_connection(self, req: Handshake.Request, res: Handshake.Response):
-
         try:
             obj = json.loads(req.payload)
             frame_id = obj["frame_id"]
-            self.log.error(f"connection dict id {id(self._tracks)}")
-            test = {k: id(v) for k, v in self._tracks.items()}
-            self.log.error(f"{test}")
             track = self._get_track(frame_id)
             res = super()._on_connection(req, res, track)
-            self.log.info(f"[{res.conn_uuid}] Added frame_id: {frame_id} {track.id}")
+            self.log.info(f"[{res.conn_uuid}] Added frame_id: {frame_id}")
         except Exception as e:
             self.log.error(f"Invalid payload: {req.payload}")
             raise e
@@ -177,7 +165,6 @@ class RTCSender(RTCNode[RTCSendConfig]):
         # except:
         #     self.log.warning(f"Invalid payload: {req.payload}")
         res.frame_ids = list(self._tracks.keys())
-
         return res
 
 
