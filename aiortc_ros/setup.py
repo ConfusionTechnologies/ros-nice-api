@@ -23,6 +23,7 @@ setup(
     entry_points={
         "console_scripts": [
             "recv = aiortc_ros.recv:main",
+            "send = aiortc_ros.send:main",
             "redball = aiortc_ros.redball_demo:main",
         ]
     },

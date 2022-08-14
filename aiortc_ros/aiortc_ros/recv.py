@@ -21,6 +21,9 @@ NODE_NAME = "rtc_receiver"
 RT_PUB_PROFILE = copy(RT_PUB_PROFILE)
 RT_PUB_PROFILE.depth = 2
 
+# did you know RTCReceiver is horizontally scalable? You can start up more instances
+# of the RTCReceiver (with unique names ofc) to handle more connections.
+
 
 @dataclass
 class RTCReceiver(RTCNode[RTCRecvConfig]):
@@ -31,7 +34,7 @@ class RTCReceiver(RTCNode[RTCRecvConfig]):
     def attach_params(self, node, cfg: RTCRecvConfig):
         super(RTCReceiver, self).attach_params(node, cfg)
 
-        self._winname = "[Livefeed] aiortc_ros"
+        self._winname = f"[{self.node.get_name()}] Livefeed"
         self._winshown = False
 
     def on_params_change(self, node, changes):

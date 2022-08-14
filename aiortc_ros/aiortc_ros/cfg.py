@@ -35,4 +35,6 @@ class RTCRecvConfig(RTCConfig):
 class RTCSendConfig(RTCConfig):
     frames_in_topic: str = "~/frames_in"
     """Topic to receive frames from."""
+    list_cam_service: str = "~/list_cams"
+    """Service to return list of cameras that can be connected to."""
 
