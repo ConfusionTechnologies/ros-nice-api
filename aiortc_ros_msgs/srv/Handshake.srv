@@ -1,7 +1,9 @@
 aiortc_ros_msgs/SDP offer
-# TODO: implement
-# any type of token to identify client; JWT or Oauth?
-string token
+
+# payload could be token to identify client or others
+# such as token + requested camera stream to connect to
+# TODO: implement JWT or Oauth
+string payload
 ---
 aiortc_ros_msgs/SDP answer
 # unique id assigned by server to identify connection
