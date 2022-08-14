@@ -56,22 +56,20 @@ class RTCSender(RTCNode[RTCSendConfig]):
     def attach_params(self, node, cfg: RTCSendConfig):
         super(RTCSender, self).attach_params(node, cfg)
 
-        # TODO: removal of stale tracks
         self._tracks = defaultdict(LiveStreamTrack)
         """Map of frame_id to track responsible for frame_id"""
+        self._last_seen = {}
+        """When frame_id was last seen"""
 
         self._winname = f"[{self.node.get_name()}] Livefeed"
         self._winshown = False
 
     def on_params_change(self, node, changes):
         self.log.info(f"Config changed: {changes}.")
-        # if not all(
-        #     n in ("compression_level", "downscale_wh", "debug_window") for n in changes
-        # ):
-        #     self.log.info(f"Config change requires restart.")
-        #     return True
-        self.log.info(f"Config change requires restart.")
-        return True
+        if not all(n in ("expiry_duration",) for n in changes):
+            self.log.info(f"Config change requires restart.")
+            return True
+        return False
 
     def attach_behaviour(self, node, cfg: RTCSendConfig):
         super(RTCSender, self).attach_behaviour(node, cfg)
@@ -98,7 +96,28 @@ class RTCSender(RTCNode[RTCSendConfig]):
         node.destroy_publisher(self._frames_sub)
         node.destroy_service(self._cam_srv)
 
-    def _on_input(self, msg):
+    def step(self, delta):
+        self._remove_stale()
+
+    def _remove_stale(self):
+        now = self.get_timestamp()
+
+        to_remove = [
+            k
+            for k in self._tracks
+            if now.sec - self._last_seen[k].sec >= self.cfg.expiry_duration
+        ]
+
+        for frame_id in to_remove:
+            self._tracks.pop(frame_id)
+            self._last_seen.pop(frame_id)
+
+    def _on_input(self, msg: Image):
+        # update list of frame_id available before returning if no connections to send to
+        frame_id = msg.header.frame_id
+        track = self._tracks[frame_id]
+        self._last_seen[frame_id] = self.get_timestamp()
+
         if len(self.rtc_manager._conns) < 1:
             return
 
@@ -109,9 +128,6 @@ class RTCSender(RTCNode[RTCSendConfig]):
         if 0 in img.shape:
             self.log.debug("Image has invalid shape!")
             return
-
-        frame_id = msg.header.frame_id
-        track = self._tracks[frame_id]
         track.send_frame(img)
 
     def _on_connection(self, req: Handshake.Request, res: Handshake.Response):

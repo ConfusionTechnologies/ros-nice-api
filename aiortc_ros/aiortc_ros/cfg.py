@@ -37,4 +37,7 @@ class RTCSendConfig(RTCConfig):
     """Topic to receive frames from."""
     list_cam_service: str = "~/list_cams"
     """Service to return list of cameras that can be connected to."""
+    expiry_duration: int = 5
+    """Duration in seconds before frame_id considered to be expired (track removed due to inactivity)."""
+    rate: float = 3
 
