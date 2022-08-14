@@ -4,8 +4,14 @@ from ament_index_python.packages import get_package_share_directory
 from launch_ros.actions import Node
 
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, LogInfo, TimerAction
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    LogInfo,
+    TimerAction,
+)
 from launch.launch_description_sources import FrontendLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 
 PACKAGE_NAME = "aiortc_ros"
 NAMESPACE = "/rtc"
@@ -31,6 +37,9 @@ KEYFILE = "/cert/server.key"
 
 
 def generate_launch_description():
+    use_compression = LaunchConfiguration("use_compression")
+    use_compression_arg = DeclareLaunchArgument("use_compression", default_value="True")
+
     ssl = "true"
     log = LogInfo(msg="Cert & key found, SSL will be enabled.")
     try:
@@ -50,6 +59,7 @@ def generate_launch_description():
         executable="recv",
         name="rtc_receiver",
         respawn=True,
+        parameters=[{"use_compression": use_compression}],
     )
 
     send_node = Node(
@@ -87,7 +97,13 @@ def generate_launch_description():
     )
 
     launch_desc = LaunchDescription(
-        [log, recv_node, send_node, TimerAction(period=3.0, actions=[rosbridge_cfg])]
+        [
+            use_compression_arg,
+            log,
+            recv_node,
+            send_node,
+            TimerAction(period=3.0, actions=[rosbridge_cfg]),
+        ]
     )
 
     return launch_desc
