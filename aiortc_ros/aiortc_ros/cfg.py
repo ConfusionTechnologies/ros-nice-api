@@ -29,6 +29,7 @@ class RTCRecvConfig(RTCConfig):
     """When using compression, downscaling the image may be necessary due to CPU usage from image decompression."""
     debug_window: bool = False
     """Displays the video feed for debug purpposes."""
+    rate: float = 120.0
 
 
 @dataclass
@@ -39,5 +40,5 @@ class RTCSendConfig(RTCConfig):
     """Service to return list of cameras that can be connected to."""
     expiry_duration: int = 3
     """Duration in seconds before frame_id considered to be expired (track removed due to inactivity)."""
-    rate: float = 3
+    rate: float = 3.0
 
