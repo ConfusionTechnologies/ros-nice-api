@@ -1,6 +1,5 @@
 # payload could be token to identify client or others
 # such as filtering which cameras to return 
-# TODO: implement JWT or Oauth
 string payload
 ---
 # available frame_ids to connect to

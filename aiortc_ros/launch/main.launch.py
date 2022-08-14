@@ -16,7 +16,7 @@ KEYFILE = "/cert/server.key"
 
 # See documentation: https://github.com/ros2/launch/blob/foxy/launch/doc/source/architecture.rst
 
-# TODO: rosbridge will crash when a high-rate publisher it is subscribed to
+# rosbridge will crash when a high-rate publisher it is subscribed to
 # gets destroyed. I cant seem to find anybody encountering this issue before
 # but we are reliably running into this across container rebuilds.
 # https://github.com/ros2/rclpy/issues/827 suggests it might be fixed in later

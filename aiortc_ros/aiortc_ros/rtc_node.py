@@ -4,6 +4,7 @@ import traceback
 from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
+from aiortc import MediaStreamTrack
 from aiortc_ros_msgs.msg import IceCandidate
 from aiortc_ros_msgs.srv import Handshake
 from nicepynode import Job
@@ -48,11 +49,18 @@ class RTCNode(Job[CT], Generic[CT]):
         node.destroy_service(self._conn_srv)
         node.destroy_subscription(self._ice_sub)
 
-    def _on_connection(self, req: Handshake.Request, res: Handshake.Response):
+    def _on_connection(
+        self,
+        req: Handshake.Request,
+        res: Handshake.Response,
+        track: MediaStreamTrack = None,
+    ):
         """Handle connect_service exchange of SDP."""
         try:
             self.log.debug(f"Incoming SDP: {req.offer}")
-            res.answer, res.conn_uuid = self.rtc_manager.handshake_sync(req.offer)
+            res.answer, res.conn_uuid = self.rtc_manager.handshake_sync(
+                req.offer, track=track
+            )
         except:
             self.log.warning(traceback.format_exc())
         return res

@@ -8,6 +8,7 @@ from typing import Any
 from uuid import uuid4
 
 from aiortc import (
+    MediaStreamTrack,
     RTCConfiguration,
     RTCDataChannel,
     RTCIceCandidate,
@@ -134,7 +135,9 @@ class RTCManager:
         pc.add_listener("track", on_track_received)
         return pc
 
-    async def handshake(self, client_sdp: SDP) -> tuple[SDP, str]:
+    async def handshake(
+        self, client_sdp: SDP, track: MediaStreamTrack = None
+    ) -> tuple[SDP, str]:
         """Handle RTC connection SDP handshake."""
         conn_id = uuid4().hex
         # intermediate WAITING state to prevent adding ice candidates before connection is ready
@@ -143,6 +146,9 @@ class RTCManager:
         self.log.info(f"[{conn_id}] Beginning connection")
         conn = self._create_connection(conn_id)
         client_sdp = RTCSessionDescription(client_sdp.sdp, client_sdp.type)
+
+        if not track is None:
+            conn.addTrack(track)
 
         await conn.setRemoteDescription(client_sdp)
         await conn.setLocalDescription(await conn.createAnswer())
@@ -212,10 +218,12 @@ class RTCManager:
             t.stop()
         return frames
 
-    def handshake_sync(self, client_sdp: SDP) -> tuple[SDP, str]:
+    def handshake_sync(
+        self, client_sdp: SDP, track: MediaStreamTrack = None
+    ) -> tuple[SDP, str]:
         """Handle RTC connection SDP handshake synchronously."""
         self._assert_loop()
-        return wait_coro(self.handshake(client_sdp), self.loop, timeout=20)
+        return wait_coro(self.handshake(client_sdp, track), self.loop, timeout=20)
 
     def add_ice_candidate_sync(self, candidate: IceCandidate):
         """Handle adding trickled ICE candidate synchronously"""
