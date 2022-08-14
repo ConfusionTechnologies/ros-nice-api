@@ -4,16 +4,11 @@ from ament_index_python.packages import get_package_share_directory
 from launch_ros.actions import Node
 
 from launch import LaunchDescription
-from launch.actions import (
-    DeclareLaunchArgument,
-    IncludeLaunchDescription,
-    LogInfo,
-    TimerAction,
-)
+from launch.actions import IncludeLaunchDescription, LogInfo, TimerAction
 from launch.launch_description_sources import FrontendLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
 
 PACKAGE_NAME = "aiortc_ros"
+NAMESPACE = "/rtc"
 
 CERTFILE = "/cert/server.crt"
 KEYFILE = "/cert/server.key"
@@ -36,11 +31,6 @@ KEYFILE = "/cert/server.key"
 
 
 def generate_launch_description():
-    namespace = LaunchConfiguration("namespace")
-    namespace_arg = DeclareLaunchArgument(
-        "namespace", description="Set the namespace of the nodes", default_value="/rtc"
-    )
-
     ssl = "true"
     log = LogInfo(msg="Cert & key found, SSL will be enabled.")
     try:
@@ -56,10 +46,19 @@ def generate_launch_description():
 
     recv_node = Node(
         package=PACKAGE_NAME,
-        namespace=namespace,
+        namespace=NAMESPACE,
         executable="recv",
         name="rtc_receiver",
         respawn=True,
+    )
+
+    send_node = Node(
+        package=PACKAGE_NAME,
+        namespace=NAMESPACE,
+        executable="send",
+        name="rtc_sender",
+        respawn=True,
+        parameters=[{"frames_in_topic": f"{NAMESPACE}/rtc_receiver/frames_out"}],
     )
 
     rosbridge_cfg = IncludeLaunchDescription(
@@ -88,12 +87,7 @@ def generate_launch_description():
     )
 
     launch_desc = LaunchDescription(
-        [
-            namespace_arg,
-            log,
-            recv_node,
-            TimerAction(period=3.0, actions=[rosbridge_cfg]),
-        ]
+        [log, recv_node, send_node, TimerAction(period=3.0, actions=[rosbridge_cfg])]
     )
 
     return launch_desc

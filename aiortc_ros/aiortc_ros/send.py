@@ -99,6 +99,9 @@ class RTCSender(RTCNode[RTCSendConfig]):
         node.destroy_service(self._cam_srv)
 
     def _on_input(self, msg):
+        if len(self.rtc_manager._conns) < 1:
+            return
+
         if isinstance(msg, Image):
             img = cv_bridge.imgmsg_to_cv2(msg, "rgb8")
         else:

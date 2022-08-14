@@ -115,8 +115,8 @@ class RTCManager:
             self.log.info(f"[{conn_id}] Track removed")
 
         async def on_conn_state():
-            if pc.connectionState == "failed":
-                self._conns.pop(conn_id, None)
+            if conn_id in self._conns and pc.connectionState in ("failed", "closed"):
+                self._conns.pop(conn_id)
                 on_track_end()
                 await pc.close()
             self.log.info(f"[{conn_id}] State change: {pc.connectionState}")
