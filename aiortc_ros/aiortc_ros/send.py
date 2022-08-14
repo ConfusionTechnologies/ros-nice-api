@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from collections import defaultdict
 from dataclasses import dataclass, field
-from threading import Lock
 
 import numpy as np
 import rclpy
@@ -35,8 +35,8 @@ class LiveStreamTrack(VideoStreamTrack):
         img[..., :3] = (0, 255, 0)
         self.frame = VideoFrame.from_ndarray(img, format="bgr24")
 
-    def send_frame(self, img):
-        self.frame = VideoFrame.from_ndarray(img, format="bgr24")
+    def send_frame(self, frame):
+        self.frame = frame
 
     async def recv(self):
         pts, time_base = await self.next_timestamp()
@@ -56,9 +56,9 @@ class RTCSender(RTCNode[RTCSendConfig]):
     def attach_params(self, node, cfg: RTCSendConfig):
         super(RTCSender, self).attach_params(node, cfg)
 
-        self._tracks: dict[str, LiveStreamTrack] = {}
-        """Map of frame_id to track responsible for frame_id"""
-        self._track_lock = Lock()
+        # TODO: THIS IS DEFINITELY A MEMORY LEAK.
+        self._tracks: dict[str, list[LiveStreamTrack]] = defaultdict(list)
+        """Map of frame_id to tracks responsible for frame_id"""
         self._last_seen = {}
         """When frame_id was last seen"""
 
@@ -97,42 +97,22 @@ class RTCSender(RTCNode[RTCSendConfig]):
         node.destroy_service(self._cam_srv)
 
     def step(self, delta):
-        # TODO: _remove_stale caused me A LOT of debugging trouble
-        # Account for duration spent in _on_connection to avoid
-        # inadvertently deleting & creating a fresh LiveStreamTrack
-        # NOTE: increasing the expiry_duration > 10s is a workaround
         self._remove_stale()
         pass
 
     def _remove_stale(self):
-        now = self.get_timestamp()
-
-        with self._track_lock:
-            to_remove = [
-                k
-                for k in self._tracks
-                if now.sec - self._last_seen.get(k, now.sec) >= self.cfg.expiry_duration
-            ]
-
-            for frame_id in to_remove:
-                self._tracks.pop(frame_id, None)
-                self._last_seen.pop(frame_id, None)
-
-    def _get_track(self, frame_id):
-        with self._track_lock:
-            track = self._tracks.get(frame_id, None)
-            # not really the best place to put this
-            self._last_seen[frame_id] = self.get_timestamp().sec
-            if not track is None:
-                return track
-            else:
-                self._tracks[frame_id] = LiveStreamTrack()
-                return self._tracks[frame_id]
+        now = self.get_timestamp().sec
+        to_remove = [
+            k for k, v in self._last_seen.items() if now - v >= self.cfg.expiry_duration
+        ]
+        for frame_id in to_remove:
+            self._last_seen.pop(frame_id, None)
 
     def _on_input(self, msg: Image):
         # update list of frame_id available before returning if no connections to send to
         frame_id = msg.header.frame_id
-        track = self._get_track(frame_id)
+        tracks = self._tracks[frame_id]
+        self._last_seen[frame_id] = self.get_timestamp().sec
 
         if len(self.rtc_manager._conns) < 1:
             return
@@ -144,13 +124,18 @@ class RTCSender(RTCNode[RTCSendConfig]):
         if 0 in img.shape:
             self.log.debug("Image has invalid shape!")
             return
-        track.send_frame(img)
+        frame = VideoFrame.from_ndarray(img, format="bgr24")
+
+        for track in tracks:
+            track.send_frame(frame)
 
     def _on_connection(self, req: Handshake.Request, res: Handshake.Response):
         try:
             obj = json.loads(req.payload)
             frame_id = obj["frame_id"]
-            track = self._get_track(frame_id)
+            # NOTE: ONLY 1 LIVESTREAMTRACK PER CONNECTION, CANNOT BE REUSED
+            track = LiveStreamTrack()
+            self._tracks[frame_id].append(track)
             res = super()._on_connection(req, res, track)
             self.log.info(f"[{res.conn_uuid}] Added frame_id: {frame_id}")
         except Exception as e:
@@ -164,7 +149,7 @@ class RTCSender(RTCNode[RTCSendConfig]):
         #     obj = json.loads(req.payload)
         # except:
         #     self.log.warning(f"Invalid payload: {req.payload}")
-        res.frame_ids = list(self._tracks.keys())
+        res.frame_ids = list(self._last_seen.keys())
         return res
 
 
