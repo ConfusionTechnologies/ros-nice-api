@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from collections import defaultdict
 from dataclasses import dataclass, field
+from threading import Lock
 
 import numpy as np
 import rclpy
@@ -56,8 +56,9 @@ class RTCSender(RTCNode[RTCSendConfig]):
     def attach_params(self, node, cfg: RTCSendConfig):
         super(RTCSender, self).attach_params(node, cfg)
 
-        self._tracks = defaultdict(LiveStreamTrack)
+        self._tracks: dict[str, LiveStreamTrack] = {}
         """Map of frame_id to track responsible for frame_id"""
+        self._track_lock = Lock()
         self._last_seen = {}
         """When frame_id was last seen"""
 
@@ -74,7 +75,6 @@ class RTCSender(RTCNode[RTCSendConfig]):
     def attach_behaviour(self, node, cfg: RTCSendConfig):
         super(RTCSender, self).attach_behaviour(node, cfg)
 
-        # TODO: make this isomorphic realtime image subscriber a utility
         self.log.info(f"Waiting for publisher@{cfg.frames_in_topic}...")
         self._frames_sub = node.create_subscription(
             # blocks until image publisher is up!
@@ -97,49 +97,77 @@ class RTCSender(RTCNode[RTCSendConfig]):
         node.destroy_service(self._cam_srv)
 
     def step(self, delta):
-        self._remove_stale()
+        # TODO: _remove_stale caused me A LOT of debugging trouble
+        # Account for duration spent in _on_connection to avoid
+        # inadvertently deleting & creating a fresh LiveStreamTrack
+        # self._remove_stale()
+        pass
 
     def _remove_stale(self):
         now = self.get_timestamp()
 
-        to_remove = [
-            k
-            for k in self._tracks
-            if now.sec - self._last_seen[k].sec >= self.cfg.expiry_duration
-        ]
+        with self._track_lock:
+            to_remove = [
+                k
+                for k in self._tracks
+                if now.sec - self._last_seen.get(k, -999) >= self.cfg.expiry_duration
+            ]
 
-        for frame_id in to_remove:
-            self._tracks.pop(frame_id)
-            self._last_seen.pop(frame_id)
+            for frame_id in to_remove:
+                self._tracks.pop(frame_id, None)
+                self._last_seen.pop(frame_id, None)
+
+    def _get_track(self, frame_id):
+        with self._track_lock:
+            track = self._tracks.get(frame_id, None)
+            if not track is None:
+                return track
+            else:
+                self._tracks[frame_id] = LiveStreamTrack()
+                return self._tracks[frame_id]
 
     def _on_input(self, msg: Image):
         # update list of frame_id available before returning if no connections to send to
+
         frame_id = msg.header.frame_id
-        track = self._tracks[frame_id]
-        self._last_seen[frame_id] = self.get_timestamp()
+        track = self._get_track(frame_id)
+        # self._last_seen[frame_id] = self.get_timestamp().sec
 
         if len(self.rtc_manager._conns) < 1:
             return
 
         if isinstance(msg, Image):
-            img = cv_bridge.imgmsg_to_cv2(msg, "rgb8")
+            img = cv_bridge.imgmsg_to_cv2(msg, "bgr8")
         else:
-            img = cv_bridge.compressed_imgmsg_to_cv2(msg, "rgb8")
+            img = cv_bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
         if 0 in img.shape:
             self.log.debug("Image has invalid shape!")
             return
         track.send_frame(img)
 
+        try:
+            if self._print_once:
+                pass
+        except:
+            self.log.error(f"on input dict id {id(self._tracks)}")
+            test = {k: id(v) for k, v in self._tracks.items()}
+            self.log.info(f"{test}")
+            self._print_once = True
+
     def _on_connection(self, req: Handshake.Request, res: Handshake.Response):
-        res = super()._on_connection(req, res)
 
         try:
             obj = json.loads(req.payload)
             frame_id = obj["frame_id"]
-            conn = self.rtc_manager._conns[res.conn_uuid]
-            conn.addTrack(self._tracks[frame_id])
-        except:
-            self.log.warning(f"Invalid payload: {req.payload}")
+            self.log.error(f"connection dict id {id(self._tracks)}")
+            test = {k: id(v) for k, v in self._tracks.items()}
+            self.log.error(f"{test}")
+            track = self._get_track(frame_id)
+            res = super()._on_connection(req, res, track)
+            self.log.info(f"[{res.conn_uuid}] Added frame_id: {frame_id} {track.id}")
+        except Exception as e:
+            self.log.error(f"Invalid payload: {req.payload}")
+            raise e
 
         return res
 
@@ -168,8 +196,6 @@ def main(args=None):
             rostask = to_thread(rclpy.spin, node)
             await rostask
 
-        # TODO: will sometimes freeze when trying to interrupt, my guess is some
-        # sort of deadlock in rtc_manager.py but i dont even know how to trace this.
         asyncio.run(loop())
     except KeyboardInterrupt:
         pass
