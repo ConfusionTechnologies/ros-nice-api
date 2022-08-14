@@ -6,6 +6,7 @@ import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+import aiortc.codecs
 import numpy as np
 import rclpy
 from aiortc import VideoStreamTrack
@@ -25,6 +26,7 @@ from aiortc_ros.rtc_node import RTCNode
 NODE_NAME = "rtc_sender"
 
 cv_bridge = CvBridge()
+aiortc.codecs.h264.MAX_BITRATE = aiortc.codecs.vpx.MAX_BITRATE = int(10e6)
 
 
 class LiveStreamTrack(VideoStreamTrack):
