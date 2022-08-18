@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import itertools
 import json
 import sys
 from collections import defaultdict
@@ -81,9 +80,10 @@ class RTCSender(RTCNode[RTCSendConfig]):
         aiortc.codecs.h264.MAX_BITRATE = aiortc.codecs.vpx.MAX_BITRATE = int(
             self.cfg.max_bitrate * 1e6
         )
-        aiortc.codecs.h264.MAX_FRAME_RATE = (
-            aiortc.codecs.vpx.MAX_FRAME_RATE
-        ) = self.cfg.max_fps
+        # TODO: figure out why adjusting this breaks everything
+        # aiortc.codecs.h264.MAX_FRAME_RATE = (
+        #    aiortc.codecs.vpx.MAX_FRAME_RATE
+        # ) = self.cfg.max_fps
 
     def attach_behaviour(self, node, cfg: RTCSendConfig):
         super(RTCSender, self).attach_behaviour(node, cfg)
