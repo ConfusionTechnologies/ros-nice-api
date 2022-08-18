@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import sys
 from collections import defaultdict
@@ -57,7 +58,6 @@ class RTCSender(RTCNode[RTCSendConfig]):
     def attach_params(self, node, cfg: RTCSendConfig):
         super(RTCSender, self).attach_params(node, cfg)
 
-        # TODO: THIS IS DEFINITELY A MEMORY LEAK.
         self._tracks: dict[str, list[LiveStreamTrack]] = defaultdict(list)
         """Map of frame_id to tracks responsible for frame_id"""
         self._last_seen = {}
@@ -113,15 +113,19 @@ class RTCSender(RTCNode[RTCSendConfig]):
 
     def step(self, delta):
         self._remove_stale()
-        pass
 
     def _remove_stale(self):
         now = self.get_timestamp().sec
         to_remove = [
             k for k, v in self._last_seen.items() if now - v >= self.cfg.expiry_duration
         ]
+        # update list of frame_id available to connect to
         for frame_id in to_remove:
             self._last_seen.pop(frame_id, None)
+
+        # remove tracks that have ended
+        for frame_id, tracks in self._tracks.items():
+            self._tracks[frame_id] = [t for t in tracks if t.readyState != "ended"]
 
     def _on_input(self, msg: Image):
         # update list of frame_id available before returning if no connections to send to
@@ -129,7 +133,7 @@ class RTCSender(RTCNode[RTCSendConfig]):
         tracks = self._tracks[frame_id]
         self._last_seen[frame_id] = self.get_timestamp().sec
 
-        if len(self.rtc_manager._conns) < 1:
+        if len(tracks) < 1 or len(self.rtc_manager._conns) < 1:
             return
 
         if isinstance(msg, Image):
@@ -150,12 +154,16 @@ class RTCSender(RTCNode[RTCSendConfig]):
             frame_id = obj["frame_id"]
             # NOTE: ONLY 1 LIVESTREAMTRACK PER CONNECTION, CANNOT BE REUSED
             track = LiveStreamTrack()
+            # While we could prevent user from connecting to non-existent camera
+            # who is to say the camera won't exist later?
+            # it might be the case once frame_id becomes deterministic
             self._tracks[frame_id].append(track)
             res = super()._on_connection(req, res, track)
             self.log.info(f"[{res.conn_uuid}] Added frame_id: {frame_id}")
         except Exception as e:
             self.log.error(f"Invalid payload: {req.payload}")
-            raise e
+            # instead of throwing error, let client handle the blank response :/
+            return Handshake.Response()
 
         return res
 
