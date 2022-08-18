@@ -71,7 +71,10 @@ class RTCSender(RTCNode[RTCSendConfig]):
         if not all(n in ("expiry_duration", "max_fps", "max_bitrate") for n in changes):
             self.log.info(f"Config change requires restart.")
             return True
+        self._apply_aiortc_hacks()
+        return False
 
+    def _apply_aiortc_hacks(self):
         # Given no official API, these 2 are hacks.
         # Looking into source code, live adjusting max bitrate should work, but
         # I am not sure about FPS.
@@ -81,7 +84,6 @@ class RTCSender(RTCNode[RTCSendConfig]):
         aiortc.codecs.h264.MAX_FRAME_RATE = (
             aiortc.codecs.vpx.MAX_FRAME_RATE
         ) = self.cfg.max_fps
-        return False
 
     def attach_behaviour(self, node, cfg: RTCSendConfig):
         super(RTCSender, self).attach_behaviour(node, cfg)
@@ -98,6 +100,8 @@ class RTCSender(RTCNode[RTCSendConfig]):
         self._cam_srv = node.create_service(
             ListCams, cfg.list_cam_service, self._on_list_cams
         )
+
+        self._apply_aiortc_hacks()
 
         self.log.info("WebRTC Sender Ready.")
 
