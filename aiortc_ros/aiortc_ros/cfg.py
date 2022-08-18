@@ -41,4 +41,10 @@ class RTCSendConfig(RTCConfig):
     expiry_duration: int = 3
     """Duration in seconds before frame_id considered to be expired (track removed due to inactivity)."""
     rate: float = 3.0
+    max_fps: float = 30.0
+    """Max FPS of output streams."""
+    # see: https://support.google.com/youtube/answer/1722171
+    # 20 Mbps is considered sufficient for HDR (compared to SDR) 1440p30fps.
+    max_bitrate: float = 20.0
+    """Max bitrate of output streams in Mbps."""
 

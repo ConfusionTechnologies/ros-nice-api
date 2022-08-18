@@ -19,3 +19,9 @@ It might be reimplemented in the future using <https://github.com/RobotWebTools/
     - Alternatively, use `image_transport` to transparently treat them all the same (but it doesn't have Python bindings...)
 - <https://docs.ros.org/en/foxy/Concepts/About-ROS-Interfaces.html#field-types> is useful for writing interfaces
 - <chrome://webrtc-internals/> **is your best friend!**
+
+## Issues
+
+- <https://github.com/RobotWebTools/rosbridge_suite/issues/744>
+  - Ocassionally websocket server will seem to completely freeze
+  - May ocassionally spam inconsequential errors when client disconnects improperly

@@ -26,7 +26,6 @@ from aiortc_ros.rtc_node import RTCNode
 NODE_NAME = "rtc_sender"
 
 cv_bridge = CvBridge()
-aiortc.codecs.h264.MAX_BITRATE = aiortc.codecs.vpx.MAX_BITRATE = int(10e6)
 
 
 class LiveStreamTrack(VideoStreamTrack):
@@ -69,9 +68,19 @@ class RTCSender(RTCNode[RTCSendConfig]):
 
     def on_params_change(self, node, changes):
         self.log.info(f"Config changed: {changes}.")
-        if not all(n in ("expiry_duration",) for n in changes):
+        if not all(n in ("expiry_duration", "max_fps", "max_bitrate") for n in changes):
             self.log.info(f"Config change requires restart.")
             return True
+
+        # Given no official API, these 2 are hacks.
+        # Looking into source code, live adjusting max bitrate should work, but
+        # I am not sure about FPS.
+        aiortc.codecs.h264.MAX_BITRATE = aiortc.codecs.vpx.MAX_BITRATE = int(
+            self.cfg.max_bitrate * 1e6
+        )
+        aiortc.codecs.h264.MAX_FRAME_RATE = (
+            aiortc.codecs.vpx.MAX_FRAME_RATE
+        ) = self.cfg.max_fps
         return False
 
     def attach_behaviour(self, node, cfg: RTCSendConfig):
