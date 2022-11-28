@@ -10,6 +10,9 @@ import aiortc.codecs
 import numpy as np
 import rclpy
 from aiortc import VideoStreamTrack
+from aiortc_ros.cfg import RTCSendConfig
+from aiortc_ros.rtc_manager import RTCManager
+from aiortc_ros.rtc_node import RTCNode
 from aiortc_ros_msgs.srv import Handshake, ListCams
 from av import VideoFrame
 from cv_bridge import CvBridge
@@ -18,10 +21,6 @@ from nicepynode.utils import RT_SUB_PROFILE
 from rclpy.node import Node
 from ros2topic.api import get_msg_class
 from sensor_msgs.msg import Image
-
-from aiortc_ros.cfg import RTCSendConfig
-from aiortc_ros.rtc_manager import RTCManager
-from aiortc_ros.rtc_node import RTCNode
 
 NODE_NAME = "rtc_sender"
 
@@ -187,7 +186,7 @@ def main(args=None):
 
         async def loop():
             manager = RTCManager(loop=asyncio.get_running_loop(), log=node.get_logger())
-            RTCSender(node, cfg, manager)
+            RTCSender(node=node, ini_cfg=cfg, rtc_manager=manager)
             rostask = to_thread(rclpy.spin, node)
             await rostask
 

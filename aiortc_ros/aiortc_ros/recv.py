@@ -7,14 +7,13 @@ from dataclasses import dataclass, field
 
 import cv2
 import rclpy
+from aiortc_ros.cfg import RTCRecvConfig
+from aiortc_ros.rtc_manager import RTCManager
+from aiortc_ros.rtc_node import RTCNode
 from nicepynode.aioutils import to_thread
 from nicepynode.utils import RT_PUB_PROFILE, letterbox
 from rclpy.node import Node
 from sensor_msgs.msg import CompressedImage, Image
-
-from aiortc_ros.cfg import RTCRecvConfig
-from aiortc_ros.rtc_manager import RTCManager
-from aiortc_ros.rtc_node import RTCNode
 
 NODE_NAME = "rtc_receiver"
 
@@ -147,7 +146,7 @@ def main(args=None):
 
         async def loop():
             manager = RTCManager(loop=asyncio.get_running_loop(), log=node.get_logger())
-            RTCReceiver(node, cfg, manager)
+            RTCReceiver(node=node, ini_cfg=cfg, rtc_manager=manager)
             rostask = to_thread(rclpy.spin, node)
             await rostask
 
