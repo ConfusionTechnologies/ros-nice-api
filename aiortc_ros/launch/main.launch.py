@@ -1,8 +1,7 @@
+import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
-from launch_ros.actions import Node
-
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -10,17 +9,19 @@ from launch.actions import (
     LogInfo,
     TimerAction,
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import FrontendLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch_ros.actions import Node
 
 PACKAGE_NAME = "aiortc_ros"
+# TODO: consider removing default namespace given this launch file is typically
+# composed as part of a main launch file.
+# The main launch file can use PushRosNamespace instead:
+# https://docs.ros.org/en/humble/Tutorials/Intermediate/Launch/Using-ROS2-Launch-For-Large-Projects.html#namespaces
 NAMESPACE = "/rtc"
 
-CERTFILE = "/cert/server.crt"
-KEYFILE = "/cert/server.key"
-
-
-# See documentation: https://github.com/ros2/launch/blob/foxy/launch/doc/source/architecture.rst
+# See documentation: https://github.com/ros2/launch/blob/humble/launch/doc/source/architecture.rst
 
 # rosbridge will crash when a high-rate publisher it is subscribed to
 # gets destroyed. I cant seem to find anybody encountering this issue before
@@ -39,19 +40,30 @@ KEYFILE = "/cert/server.key"
 def generate_launch_description():
     use_compression = LaunchConfiguration("use_compression")
     use_compression_arg = DeclareLaunchArgument("use_compression", default_value="True")
+    certfile = LaunchConfiguration("certfile")
+    certfile_arg = DeclareLaunchArgument("certfile", default_value="/cert/server.crt")
+    keyfile = LaunchConfiguration("keyfile")
+    keyfile_arg = DeclareLaunchArgument("keyfile", default_value="/cert/server.key")
 
-    ssl = "true"
-    log = LogInfo(msg="Cert & key found, SSL will be enabled.")
-    try:
-        with open(CERTFILE, "r"):
-            pass
-        with open(KEYFILE, "r"):
-            pass
-    except:
-        ssl = "false"
-        log = LogInfo(
-            msg=f"Cert or key not found at {CERTFILE} and {KEYFILE}. SSL disabled."
+    ssl_available = IfCondition(
+        PythonExpression(
+            ["os.path.exists(", certfile, ") and os.path.exists(", keyfile, ")"]
         )
+    )
+
+    log = LogInfo(
+        PythonExpression(
+            [
+                "'Cert & key found, SSL will be enabled.' if ",
+                ssl_available,
+                " else 'Cert or key not found at ",
+                certfile,
+                " and ",
+                keyfile,
+                ". SSL disabled.'",
+            ]
+        )
+    )
 
     recv_node = Node(
         package=PACKAGE_NAME,
@@ -90,15 +102,17 @@ def generate_launch_description():
             # topics_glob="\[*\]",
             # services_glob="\[*\]",
             # params_glob="\[*\]",
-            ssl=ssl,
-            certfile=CERTFILE,
-            keyfile=KEYFILE,
+            ssl=ssl_available,
+            certfile=certfile,
+            keyfile=keyfile,
         ).items(),
     )
 
     launch_desc = LaunchDescription(
         [
             use_compression_arg,
+            certfile_arg,
+            keyfile_arg,
             log,
             recv_node,
             send_node,
@@ -107,4 +121,3 @@ def generate_launch_description():
     )
 
     return launch_desc
-
