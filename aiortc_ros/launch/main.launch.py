@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
@@ -9,7 +8,6 @@ from launch.actions import (
     LogInfo,
     TimerAction,
 )
-from launch.conditions import IfCondition
 from launch.launch_description_sources import FrontendLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
@@ -45,14 +43,19 @@ def generate_launch_description():
     keyfile = LaunchConfiguration("keyfile")
     keyfile_arg = DeclareLaunchArgument("keyfile", default_value="/cert/server.key")
 
-    ssl_available = IfCondition(
-        PythonExpression(
-            ["os.path.exists(", certfile, ") and os.path.exists(", keyfile, ")"]
-        )
+    ssl_available = PythonExpression(
+        [
+            "exec('import os') or ",
+            "os.path.exists('",
+            certfile,
+            "') and os.path.exists('",
+            keyfile,
+            "')",
+        ]
     )
 
     log = LogInfo(
-        PythonExpression(
+        msg=PythonExpression(
             [
                 "'Cert & key found, SSL will be enabled.' if ",
                 ssl_available,
